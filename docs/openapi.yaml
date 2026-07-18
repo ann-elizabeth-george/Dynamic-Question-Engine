@@ -1,0 +1,494 @@
+openapi: 3.0.3
+info:
+  title: Smission Core Engine API
+  description: OpenAPI 3.0 Contract for the Dynamic Assessment Platform Core Engine
+  version: 1.0.0
+servers:
+  - url: /api/v1
+paths:
+  /auth/register:
+    post:
+      summary: Register a new candidate account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserCreate'
+      responses:
+        '200':
+          description: Successful registration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeUserResponse'
+
+  /auth/login:
+    post:
+      summary: Authenticate user and return JWT tokens
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                username:
+                  type: string
+                password:
+                  type: string
+              required:
+                - username
+                - password
+      responses:
+        '200':
+          description: Authentication successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeTokenResponse'
+
+  /auth/profile:
+    post:
+      summary: Create or update candidate profile
+      security:
+        - OAuth2PasswordBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProfileCreate'
+      responses:
+        '200':
+          description: Profile completed with registration number
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeProfileResponse'
+
+  /categories:
+    get:
+      summary: List all active categories
+      responses:
+        '200':
+          description: Categories retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeCategoriesList'
+    post:
+      summary: Create a category (Admin only)
+      security:
+        - OAuth2PasswordBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CategoryCreate'
+      responses:
+        '200':
+          description: Category created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeCategoryResponse'
+
+  /questions:
+    get:
+      summary: List all questions (Admin only)
+      security:
+        - OAuth2PasswordBearer: []
+      responses:
+        '200':
+          description: Questions retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeQuestionsList'
+    post:
+      summary: Create a question with answer options (Admin only)
+      security:
+        - OAuth2PasswordBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QuestionCreate'
+      responses:
+        '200':
+          description: Question created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeQuestionResponse'
+
+  /assessment/session:
+    post:
+      summary: Start an assessment session for a category
+      security:
+        - OAuth2PasswordBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                category_id:
+                  type: integer
+              required:
+                - category_id
+      responses:
+        '200':
+          description: Session started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeSessionResponse'
+
+  /assessment/submit-answer:
+    post:
+      summary: Submit response to the current question
+      security:
+        - OAuth2PasswordBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmitAnswerRequest'
+      responses:
+        '200':
+          description: Answer recorded and next state returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeSubmitResponse'
+
+  /assessment/history:
+    get:
+      summary: Get assessment history for the current user
+      security:
+        - OAuth2PasswordBearer: []
+      responses:
+        '200':
+          description: Assessment history list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvelopeHistoryList'
+
+components:
+  securitySchemes:
+    OAuth2PasswordBearer:
+      type: oauth2
+      flows:
+        password:
+          tokenUrl: /api/v1/auth/login
+          scopes: {}
+  schemas:
+    EnvelopeBase:
+      type: object
+      properties:
+        success:
+          type: boolean
+        error:
+          type: string
+          nullable: true
+
+    UserCreate:
+      type: object
+      properties:
+        username:
+          type: string
+        email:
+          type: string
+        password:
+          type: string
+      required:
+        - username
+        - email
+        - password
+
+    UserResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+        username:
+          type: string
+        email:
+          type: string
+        role_id:
+          type: integer
+        is_active:
+          type: boolean
+
+    EnvelopeUserResponse:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/UserResponse'
+
+    TokenResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+        token_type:
+          type: string
+
+    EnvelopeTokenResponse:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/TokenResponse'
+
+    ProfileCreate:
+      type: object
+      properties:
+        first_name:
+          type: string
+        last_name:
+          type: string
+        phone:
+          type: string
+        district_code:
+          type: string
+        area_code:
+          type: string
+        category_code:
+          type: string
+      required:
+        - first_name
+        - last_name
+        - phone
+        - district_code
+        - area_code
+        - category_code
+
+    ProfileResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+        first_name:
+          type: string
+        last_name:
+          type: string
+        phone:
+          type: string
+        registration_number:
+          type: string
+
+    EnvelopeProfileResponse:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/ProfileResponse'
+
+    CategoryCreate:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        is_active:
+          type: boolean
+      required:
+        - name
+
+    CategoryResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: string
+        is_active:
+          type: boolean
+
+    EnvelopeCategoryResponse:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/CategoryResponse'
+
+    EnvelopeCategoriesList:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/CategoryResponse'
+
+    AnswerCreate:
+      type: object
+      properties:
+        answer_text:
+          type: string
+        is_correct:
+          type: boolean
+        display_order:
+          type: integer
+      required:
+        - answer_text
+
+    QuestionCreate:
+      type: object
+      properties:
+        question_text:
+          type: string
+        question_type:
+          type: string
+          enum: [single_choice, multiple_choice, boolean, text, number, date]
+        answers:
+          type: array
+          items:
+            $ref: '#/components/schemas/AnswerCreate'
+      required:
+        - question_text
+        - question_type
+        - answers
+
+    QuestionResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+        question_text:
+          type: string
+        question_type:
+          type: string
+        answers:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              answer_text:
+                type: string
+              display_order:
+                type: integer
+
+    EnvelopeQuestionResponse:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/QuestionResponse'
+
+    EnvelopeQuestionsList:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/QuestionResponse'
+
+    SessionResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+        user_id:
+          type: integer
+        category_id:
+          type: integer
+        current_question_index:
+          type: integer
+        status:
+          type: string
+          enum: [STARTED, COMPLETED, ABANDONED]
+        progress_percentage:
+          type: number
+
+    EnvelopeSessionResponse:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/SessionResponse'
+
+    SubmitAnswerRequest:
+      type: object
+      properties:
+        session_id:
+          type: integer
+        question_id:
+          type: integer
+        answer_id:
+          type: integer
+      required:
+        - session_id
+        - question_id
+        - answer_id
+
+    SubmitResponse:
+      type: object
+      properties:
+        is_completed:
+          type: boolean
+        progress_percentage:
+          type: number
+        next_question:
+          $ref: '#/components/schemas/QuestionResponse'
+          nullable: true
+
+    EnvelopeSubmitResponse:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/SubmitResponse'
+
+    EnvelopeHistoryList:
+      allOf:
+        - $ref: '#/components/schemas/EnvelopeBase'
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                type: object
+                properties:
+                  session:
+                    $ref: '#/components/schemas/SessionResponse'
+                  category_name:
+                    type: string
+                  responses:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                        question_text:
+                          type: string
+                        answer_text:
+                          type: string
+                        timestamp:
+                          type: string
+                          format: date-time

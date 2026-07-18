@@ -1,0 +1,4805 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+backend/
+  app/
+    api/
+      v1/
+        __init__.py
+        assessment.py
+        auth.py
+        categories.py
+        questions.py
+      __init__.py
+      router.py
+    config/
+      settings.py
+    core/
+      events.py
+      security.py
+    database/
+      base_class.py
+      base.py
+      init_db.py
+      session.py
+    dependencies/
+      auth.py
+    models/
+      answer.py
+      category.py
+      mapping.py
+      question.py
+      registration_counter.py
+      response.py
+      role.py
+      session.py
+      user_profile.py
+      user.py
+    schemas/
+      assessment.py
+      category.py
+      profile.py
+      question.py
+      user.py
+    services/
+      assessment_engine.py
+      assessment_service.py
+      auth_service.py
+      category_service.py
+      question_service.py
+    __init__.py
+    main.py
+  requirements.txt
+  run.py
+frontend/
+  public/
+    favicon.svg
+    icons.svg
+  src/
+    assets/
+      hero.png
+      react.svg
+      vite.svg
+    components/
+      Loader.css
+      Loader.jsx
+      Navbar.css
+      Navbar.jsx
+    context/
+      AuthContext.jsx
+    layouts/
+      AuthLayout.jsx
+      DashboardLayout.jsx
+    pages/
+      admin/
+        AdminCategories.css
+        AdminCategories.jsx
+        AdminDashboard.css
+        AdminDashboard.jsx
+        AdminMappings.css
+        AdminMappings.jsx
+        AdminQuestions.css
+        AdminQuestions.jsx
+      Assessment.css
+      Assessment.jsx
+      Completion.css
+      Completion.jsx
+      Dashboard.css
+      Dashboard.jsx
+      History.css
+      History.jsx
+      Login.css
+      Login.jsx
+      Profile.css
+      Profile.jsx
+      Register.css
+      Register.jsx
+    routes/
+      AppRoutes.jsx
+      PrivateRoute.jsx
+    services/
+      api.js
+      assessment.js
+      auth.js
+      categories.js
+      questions.js
+    App.css
+    App.jsx
+    index.css
+    main.jsx
+  .gitignore
+  .oxlintrc.json
+  index.html
+  package.json
+  README.md
+  vite.config.js
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="backend/app/api/v1/__init__.py">
+# Package marker
+</file>
+
+<file path="backend/app/api/v1/assessment.py">
+from fastapi import APIRouter, Depends, Query, status
+from sqlalchemy.orm import Session
+from typing import List
+
+from app.dependencies.auth import get_db, get_current_active_user
+from app.schemas.assessment import (
+    AssessmentStartRequest,
+    AssessmentSessionResponse,
+    SubmitAnswerRequest,
+    SubmitAnswerResponse,
+    AssessmentHistoryItem
+)
+from app.schemas.question import QuestionResponse
+from app.services import assessment_service
+from app.models.user import User
+
+router = APIRouter()
+
+@router.post("/start", response_model=AssessmentSessionResponse, status_code=status.HTTP_201_CREATED)
+def start_assessment_session(
+    request: AssessmentStartRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    return assessment_service.start_session(db, user_id=current_user.id, category_id=request.category_id)
+
+@router.get("/question", response_model=QuestionResponse)
+def get_current_assessment_question(
+    session_id: int = Query(..., description="Active assessment session ID"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    return assessment_service.get_current_question(db, session_id=session_id, user_id=current_user.id)
+
+@router.post("/answer", response_model=SubmitAnswerResponse)
+def submit_assessment_answer(
+    request: SubmitAnswerRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    return assessment_service.submit_answer(db, user_id=current_user.id, request=request)
+
+@router.get("/history", response_model=List[AssessmentHistoryItem])
+def read_assessment_history(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    return assessment_service.get_user_assessment_history(db, user_id=current_user.id)
+</file>
+
+<file path="backend/app/api/v1/auth.py">
+from datetime import timedelta
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordRequestForm
+from sqlalchemy.orm import Session
+
+from app.dependencies.auth import get_db, get_current_active_user
+from app.schemas.user import UserCreate, UserResponse, Token
+from app.schemas.profile import ProfileCreate, ProfileResponse
+from app.models.user import User
+from app.services import auth_service
+from app.core import security
+from app.config.settings import settings
+
+router = APIRouter()
+
+@router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+def register(user_in: UserCreate, db: Session = Depends(get_db)):
+    return auth_service.register_user(db, user_in)
+
+@router.post("/login", response_model=Token)
+def login(
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    db: Session = Depends(get_db)
+):
+    user = auth_service.authenticate_user(
+        db, username_or_email=form_data.username, password=form_data.password
+    )
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Incorrect username or password"
+        )
+    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = security.create_access_token(
+        subject=user.id, expires_delta=access_token_expires
+    )
+    return {"access_token": access_token, "token_type": "bearer"}
+
+@router.get("/me", response_model=UserResponse)
+def get_me(current_user: User = Depends(get_current_active_user)):
+    return current_user
+
+@router.post("/profile", response_model=ProfileResponse)
+def create_profile(
+    profile_in: ProfileCreate,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    return auth_service.create_user_profile(db, current_user.id, profile_in)
+</file>
+
+<file path="backend/app/api/v1/categories.py">
+from fastapi import APIRouter, Depends, status
+from sqlalchemy.orm import Session
+from typing import List
+
+from app.dependencies.auth import get_db, require_admin, get_current_active_user
+from app.schemas.category import CategoryCreate, CategoryResponse, MappingCreate, MappingResponse
+from app.services import category_service
+
+router = APIRouter()
+
+@router.get("", response_model=List[CategoryResponse])
+def read_categories(
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_active_user)
+):
+    return category_service.get_active_categories(db)
+
+@router.post("", response_model=CategoryResponse, status_code=status.HTTP_201_CREATED)
+def create_category(
+    category_in: CategoryCreate,
+    db: Session = Depends(get_db),
+    current_user = Depends(require_admin)
+):
+    return category_service.create_category(db, category_in)
+
+@router.post("/map", response_model=MappingResponse, status_code=status.HTTP_201_CREATED)
+def map_question_to_category(
+    mapping_in: MappingCreate,
+    db: Session = Depends(get_db),
+    current_user = Depends(require_admin)
+):
+    return category_service.create_mapping(db, mapping_in)
+</file>
+
+<file path="backend/app/api/v1/questions.py">
+from fastapi import APIRouter, Depends, status
+from sqlalchemy.orm import Session
+from typing import List
+
+from app.dependencies.auth import get_db, require_admin, get_current_active_user
+from app.schemas.question import QuestionCreate, QuestionResponse
+from app.services import question_service
+
+router = APIRouter()
+
+@router.post("", response_model=QuestionResponse, status_code=status.HTTP_201_CREATED)
+def create_question(
+    question_in: QuestionCreate,
+    db: Session = Depends(get_db),
+    current_user = Depends(require_admin)
+):
+    return question_service.create_question(db, question_in)
+
+@router.get("/category/{category_id}", response_model=List[QuestionResponse])
+def read_questions_by_category(
+    category_id: int,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_active_user)
+):
+    return question_service.get_questions_by_category(db, category_id=category_id)
+</file>
+
+<file path="backend/app/api/__init__.py">
+# Package marker
+</file>
+
+<file path="backend/app/api/router.py">
+from fastapi import APIRouter
+from app.api.v1 import auth, categories, questions, assessment
+
+api_router = APIRouter()
+
+api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
+api_router.include_router(categories.router, prefix="/categories", tags=["categories"])
+api_router.include_router(questions.router, prefix="/questions", tags=["questions"])
+api_router.include_router(assessment.router, prefix="/assessment", tags=["assessment"])
+</file>
+
+<file path="backend/app/config/settings.py">
+from pydantic_settings import BaseSettings
+
+class Settings(BaseSettings):
+    PROJECT_NAME: str = "Dynamic Assessment Platform Core Engine"
+    API_V1_STR: str = "/api/v1"
+    
+    # Security
+    SECRET_KEY: str = "supersecretkeychangeinprod1234567890"  # In production, use env variable
+    ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
+    
+    # Database
+    DATABASE_URL: str = "mysql+pymysql://root:password@localhost:3306/assessment_platform"
+
+    class Config:
+        case_sensitive = True
+        env_file = ".env"
+
+settings = Settings()
+</file>
+
+<file path="backend/app/core/events.py">
+import logging
+from typing import Callable, Dict, List
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("EventHooks")
+
+# Define event type constants
+USER_REGISTERED = "USER_REGISTERED"
+PROFILE_COMPLETED = "PROFILE_COMPLETED"
+ASSESSMENT_STARTED = "ASSESSMENT_STARTED"
+QUESTION_ANSWERED = "QUESTION_ANSWERED"
+ASSESSMENT_COMPLETED = "ASSESSMENT_COMPLETED"
+
+# Local synchronous registry for subscribers
+_subscribers: Dict[str, List[Callable[..., None]]] = {
+    USER_REGISTERED: [],
+    PROFILE_COMPLETED: [],
+    ASSESSMENT_STARTED: [],
+    QUESTION_ANSWERED: [],
+    ASSESSMENT_COMPLETED: []
+}
+
+def subscribe(event_type: str, callback: Callable[..., None]) -> None:
+    if event_type in _subscribers:
+        _subscribers[event_type].append(callback)
+        logger.info(f"Subscribed {callback.__name__} to event: {event_type}")
+
+def dispatch(event_type: str, *args, **kwargs) -> None:
+    logger.info(f"Dispatching event: {event_type} with args: {args}, kwargs: {kwargs}")
+    if event_type in _subscribers:
+        for callback in _subscribers[event_type]:
+            try:
+                callback(*args, **kwargs)
+            except Exception as e:
+                logger.error(f"Error executing callback {callback.__name__} for event {event_type}: {e}")
+
+# Default fallback listener to show hooks work
+def log_event_listener(event_type: str, payload: dict):
+    logger.info(f"-[EVENT LOGGED]- Type: {event_type} | Payload: {payload}")
+
+# Register default listener
+for evt in _subscribers.keys():
+    subscribe(evt, lambda payload, e_type=evt: log_event_listener(e_type, payload))
+</file>
+
+<file path="backend/app/core/security.py">
+from datetime import datetime, timedelta
+from typing import Any, Union
+from jose import jwt
+from passlib.context import CryptContext
+from app.config.settings import settings
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    return pwd_context.verify(plain_password, hashed_password)
+
+def get_password_hash(password: str) -> str:
+    return pwd_context.hash(password)
+
+def create_access_token(subject: Union[str, Any], expires_delta: timedelta = None) -> str:
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(
+            minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
+        )
+    to_encode = {"exp": expire, "sub": str(subject)}
+    encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+    return encoded_jwt
+</file>
+
+<file path="backend/app/database/base_class.py">
+from datetime import datetime
+from sqlalchemy import Column, Integer, DateTime, Boolean
+from sqlalchemy.orm import as_declarative, declared_attr
+
+@as_declarative()
+class Base:
+    id = Column(Integer, primary_key=True, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    is_deleted = Column(Boolean, default=False, index=True, nullable=False)
+
+    # Generate __tablename__ automatically
+    @declared_attr
+    def __tablename__(cls) -> str:
+        return cls.__name__.lower() + "s"
+</file>
+
+<file path="backend/app/database/base.py">
+# Import all the models so that Base has them before being
+# imported by Alembic or used in migrations
+from app.database.base_class import Base  # noqa
+from app.models.role import Role  # noqa
+from app.models.user import User  # noqa
+from app.models.user_profile import UserProfile  # noqa
+from app.models.registration_counter import RegistrationCounter  # noqa
+from app.models.category import Category  # noqa
+from app.models.question import Question  # noqa
+from app.models.answer import Answer  # noqa
+from app.models.mapping import CategoryQuestionMapping  # noqa
+from app.models.session import AssessmentSession  # noqa
+from app.models.response import UserResponse  # noqa
+</file>
+
+<file path="backend/app/database/init_db.py">
+from sqlalchemy.orm import Session
+from app.database.base import Base
+from app.database.session import engine
+from app.models.role import Role
+
+def init_db(db: Session) -> None:
+    # Create all tables
+    Base.metadata.create_all(bind=engine)
+    
+    # Check if roles exist, if not, create them
+    admin_role = db.query(Role).filter(Role.name == "Admin").first()
+    if not admin_role:
+        admin_role = Role(
+            name="Admin",
+            description="System administrator with full management access",
+            is_active=True
+        )
+        db.add(admin_role)
+        
+    student_role = db.query(Role).filter(Role.name == "Student").first()
+    if not student_role:
+        student_role = Role(
+            name="Student",
+            description="Standard candidate/student role for taking assessments",
+            is_active=True
+        )
+        db.add(student_role)
+        
+    db.commit()
+</file>
+
+<file path="backend/app/database/session.py">
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker, declarative_base
+from app.config.settings import settings
+
+engine = create_engine(
+    settings.DATABASE_URL,
+    pool_pre_ping=True,
+    pool_size=10,
+    max_overflow=20
+)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+</file>
+
+<file path="backend/app/dependencies/auth.py">
+from typing import Generator
+from fastapi import Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
+from jose import jwt, JWTError
+from sqlalchemy.orm import Session
+
+from app.config.settings import settings
+from app.database.session import SessionLocal
+from app.models.user import User
+from app.models.role import Role
+from app.schemas.user import TokenPayload
+
+oauth2_scheme = OAuth2PasswordBearer(
+    tokenUrl=f"{settings.API_V1_STR}/auth/login"
+)
+
+def get_db() -> Generator[Session, None, None]:
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+def get_current_user(
+    db: Session = Depends(get_db), token: str = Depends(oauth2_scheme)
+) -> User:
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(
+            token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
+        )
+        user_id: str = payload.get("sub")
+        if user_id is None:
+            raise credentials_exception
+        token_payload = TokenPayload(sub=int(user_id))
+    except JWTError:
+        raise credentials_exception
+        
+    user = db.query(User).filter(User.id == token_payload.sub, User.is_deleted == False).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    return user
+
+def get_current_active_user(
+    current_user: User = Depends(get_current_user)
+) -> User:
+    if not current_user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Inactive user"
+        )
+    return current_user
+
+class RoleChecker:
+    def __init__(self, allowed_roles: list[str]):
+        self.allowed_roles = allowed_roles
+
+    def __call__(
+        self,
+        current_user: User = Depends(get_current_active_user),
+        db: Session = Depends(get_db)
+    ) -> User:
+        role = db.query(Role).filter(Role.id == current_user.role_id).first()
+        if not role or role.name not in self.allowed_roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="The user does not have enough privileges"
+            )
+        return current_user
+
+require_admin = RoleChecker(["Admin"])
+require_student = RoleChecker(["Student", "Admin"])
+</file>
+
+<file path="backend/app/models/answer.py">
+from sqlalchemy import Column, String, Integer, ForeignKey, Boolean
+from sqlalchemy.orm import relationship
+from app.database.base_class import Base
+
+class Answer(Base):
+    __tablename__ = "answers"
+
+    question_id = Column(Integer, ForeignKey("questions.id"), nullable=False)
+    answer_text = Column(String(255), nullable=False)
+    display_order = Column(Integer, default=0, nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+
+    question = relationship("Question", back_populates="answers")
+    responses = relationship("UserResponse", back_populates="answer")
+</file>
+
+<file path="backend/app/models/category.py">
+from sqlalchemy import Column, String, Boolean
+from sqlalchemy.orm import relationship
+from app.database.base_class import Base
+
+class Category(Base):
+    __tablename__ = "categories"
+
+    name = Column(String(100), unique=True, index=True, nullable=False)
+    description = Column(String(255), nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+
+    mappings = relationship("CategoryQuestionMapping", back_populates="category")
+    sessions = relationship("AssessmentSession", back_populates="category")
+</file>
+
+<file path="backend/app/models/mapping.py">
+from sqlalchemy import Column, Integer, ForeignKey, Boolean
+from sqlalchemy.orm import relationship
+from app.database.base_class import Base
+
+class CategoryQuestionMapping(Base):
+    __tablename__ = "category_question_mappings"
+
+    category_id = Column(Integer, ForeignKey("categories.id"), nullable=False)
+    question_id = Column(Integer, ForeignKey("questions.id"), nullable=False)
+    display_order = Column(Integer, default=0, nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+
+    category = relationship("Category", back_populates="mappings")
+    question = relationship("Question", back_populates="mappings")
+</file>
+
+<file path="backend/app/models/question.py">
+from sqlalchemy import Column, String, Text, Boolean
+from sqlalchemy.orm import relationship
+from app.database.base_class import Base
+
+class Question(Base):
+    __tablename__ = "questions"
+
+    code = Column(String(50), unique=True, index=True, nullable=False)
+    question_text = Column(Text, nullable=False)
+    question_type = Column(String(50), default="SINGLE_CHOICE", nullable=False) # e.g. SINGLE_CHOICE, MULTI_CHOICE
+    status = Column(String(50), default="ACTIVE", nullable=False) # e.g. ACTIVE, INACTIVE
+
+    answers = relationship("Answer", back_populates="question", cascade="all, delete-orphan")
+    mappings = relationship("CategoryQuestionMapping", back_populates="question")
+    responses = relationship("UserResponse", back_populates="question")
+</file>
+
+<file path="backend/app/models/registration_counter.py">
+from sqlalchemy import Column, String, Integer, UniqueConstraint
+from app.database.base_class import Base
+
+class RegistrationCounter(Base):
+    __tablename__ = "registration_counters"
+
+    district_code = Column(String(10), nullable=False)
+    area_code = Column(String(10), nullable=False)
+    category_code = Column(String(10), nullable=False)
+    current_number = Column(Integer, default=0, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint('district_code', 'area_code', 'category_code', name='_district_area_category_uc'),
+    )
+</file>
+
+<file path="backend/app/models/response.py">
+from sqlalchemy import Column, Integer, ForeignKey, DateTime
+from sqlalchemy.orm import relationship
+from app.database.base_class import Base
+
+class UserResponse(Base):
+    __tablename__ = "user_responses"
+
+    session_id = Column(Integer, ForeignKey("assessment_sessions.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    question_id = Column(Integer, ForeignKey("questions.id"), nullable=False)
+    answer_id = Column(Integer, ForeignKey("answers.id"), nullable=False)
+    timestamp = Column(DateTime, nullable=False)
+
+    session = relationship("AssessmentSession", back_populates="responses")
+    user = relationship("User", back_populates="responses")
+    question = relationship("Question", back_populates="responses")
+    answer = relationship("Answer", back_populates="responses")
+</file>
+
+<file path="backend/app/models/role.py">
+from sqlalchemy import Column, String, Boolean
+from sqlalchemy.orm import relationship
+from app.database.base_class import Base
+
+class Role(Base):
+    __tablename__ = "roles"
+
+    name = Column(String(50), unique=True, index=True, nullable=False)
+    description = Column(String(255), nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+
+    users = relationship("User", back_populates="role")
+</file>
+
+<file path="backend/app/models/session.py">
+from sqlalchemy import Column, String, Integer, ForeignKey, DateTime, Numeric
+from sqlalchemy.orm import relationship
+from app.database.base_class import Base
+
+class AssessmentSession(Base):
+    __tablename__ = "assessment_sessions"
+
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    category_id = Column(Integer, ForeignKey("categories.id"), nullable=False)
+    current_question_index = Column(Integer, default=0, nullable=False)
+    current_question_id = Column(Integer, ForeignKey("questions.id"), nullable=True)
+    status = Column(String(50), default="STARTED", nullable=False)  # STARTED, COMPLETED
+    start_time = Column(DateTime, nullable=False)
+    completion_time = Column(DateTime, nullable=True)
+    progress_percentage = Column(Numeric(5, 2), default=0.00, nullable=False)
+
+    user = relationship("User", back_populates="sessions")
+    category = relationship("Category", back_populates="sessions")
+    responses = relationship("UserResponse", back_populates="session")
+</file>
+
+<file path="backend/app/models/user_profile.py">
+from sqlalchemy import Column, String, Integer, ForeignKey
+from sqlalchemy.orm import relationship
+from app.database.base_class import Base
+
+class UserProfile(Base):
+    __tablename__ = "user_profiles"
+
+    user_id = Column(Integer, ForeignKey("users.id"), unique=True, index=True, nullable=False)
+    first_name = Column(String(50), nullable=False)
+    last_name = Column(String(50), nullable=False)
+    phone = Column(String(20), nullable=False)
+    
+    district_code = Column(String(10), nullable=False)
+    area_code = Column(String(10), nullable=False)
+    category_code = Column(String(10), nullable=False)
+    running_number = Column(Integer, nullable=False)
+    registration_number = Column(String(50), unique=True, index=True, nullable=False)
+
+    user = relationship("User", back_populates="profile")
+</file>
+
+<file path="backend/app/models/user.py">
+from sqlalchemy import Column, String, Integer, ForeignKey, Boolean
+from sqlalchemy.orm import relationship
+from app.database.base_class import Base
+
+class User(Base):
+    __tablename__ = "users"
+
+    username = Column(String(50), unique=True, index=True, nullable=False)
+    email = Column(String(100), unique=True, index=True, nullable=False)
+    password_hash = Column(String(255), nullable=False)
+    role_id = Column(Integer, ForeignKey("roles.id"), nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+
+    role = relationship("Role", back_populates="users")
+    profile = relationship("UserProfile", back_populates="user", uselist=False)
+    sessions = relationship("AssessmentSession", back_populates="user")
+    responses = relationship("UserResponse", back_populates="user")
+</file>
+
+<file path="backend/app/schemas/assessment.py">
+from datetime import datetime
+from pydantic import BaseModel
+from typing import Optional, List
+from app.schemas.question import QuestionResponse
+
+class AssessmentStartRequest(BaseModel):
+    category_id: int
+
+class SubmitAnswerRequest(BaseModel):
+    session_id: int
+    question_id: int
+    answer_id: int
+
+class SubmitAnswerResponse(BaseModel):
+    success: bool
+    is_completed: bool
+    progress_percentage: float
+    next_question: Optional[QuestionResponse] = None
+
+class AssessmentSessionResponse(BaseModel):
+    id: int
+    user_id: int
+    category_id: int
+    current_question_index: int
+    current_question_id: Optional[int] = None
+    status: str
+    start_time: datetime
+    completion_time: Optional[datetime] = None
+    progress_percentage: float
+
+    class Config:
+        from_attributes = True
+
+class UserResponseItem(BaseModel):
+    id: int
+    session_id: int
+    question_id: int
+    question_text: str
+    answer_id: int
+    answer_text: str
+    timestamp: datetime
+
+    class Config:
+        from_attributes = True
+
+class AssessmentHistoryItem(BaseModel):
+    session: AssessmentSessionResponse
+    category_name: str
+    responses: List[UserResponseItem] = []
+
+    class Config:
+        from_attributes = True
+</file>
+
+<file path="backend/app/schemas/category.py">
+from pydantic import BaseModel
+from typing import Optional
+
+class CategoryBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+    is_active: Optional[bool] = True
+
+class CategoryCreate(CategoryBase):
+    pass
+
+class CategoryUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    is_active: Optional[bool] = None
+
+class CategoryResponse(CategoryBase):
+    id: int
+
+    class Config:
+        from_attributes = True
+        
+class MappingCreate(BaseModel):
+    category_id: int
+    question_id: int
+    display_order: int
+
+class MappingResponse(BaseModel):
+    id: int
+    category_id: int
+    question_id: int
+    display_order: int
+    is_active: bool
+
+    class Config:
+        from_attributes = True
+</file>
+
+<file path="backend/app/schemas/profile.py">
+from pydantic import BaseModel
+from typing import Optional
+
+class ProfileCreate(BaseModel):
+    first_name: str
+    last_name: str
+    phone: str
+    district_code: str
+    area_code: str
+    category_code: str
+
+class ProfileResponse(BaseModel):
+    id: int
+    user_id: int
+    first_name: str
+    last_name: str
+    phone: str
+    district_code: str
+    area_code: str
+    category_code: str
+    running_number: int
+    registration_number: str
+
+    class Config:
+        from_attributes = True
+</file>
+
+<file path="backend/app/schemas/question.py">
+from pydantic import BaseModel
+from typing import List, Optional
+
+class AnswerCreate(BaseModel):
+    answer_text: str
+    display_order: int
+    is_active: Optional[bool] = True
+
+class AnswerResponse(BaseModel):
+    id: int
+    question_id: int
+    answer_text: str
+    display_order: int
+    is_active: bool
+
+    class Config:
+        from_attributes = True
+
+class QuestionCreate(BaseModel):
+    code: str
+    question_text: str
+    question_type: str = "SINGLE_CHOICE" # e.g. SINGLE_CHOICE, MULTI_CHOICE
+    status: str = "ACTIVE"
+    answers: List[AnswerCreate] = []
+
+class QuestionUpdate(BaseModel):
+    question_text: Optional[str] = None
+    question_type: Optional[str] = None
+    status: Optional[str] = None
+
+class QuestionResponse(BaseModel):
+    id: int
+    code: str
+    question_text: str
+    question_type: str
+    status: str
+    answers: List[AnswerResponse] = []
+
+    class Config:
+        from_attributes = True
+</file>
+
+<file path="backend/app/schemas/user.py">
+from datetime import datetime
+from pydantic import BaseModel, EmailStr
+from typing import Optional
+
+# Token
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+
+class TokenPayload(BaseModel):
+    sub: Optional[int] = None
+
+# Role
+class RoleBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+
+class RoleResponse(RoleBase):
+    id: int
+    is_active: bool
+
+    class Config:
+        from_attributes = True
+
+# User
+class UserBase(BaseModel):
+    username: str
+    email: EmailStr
+
+class UserCreate(UserBase):
+    password: str
+
+class UserUpdate(BaseModel):
+    password: Optional[str] = None
+    email: Optional[EmailStr] = None
+
+class UserResponse(UserBase):
+    id: int
+    role_id: int
+    is_active: bool
+    created_at: datetime
+    role: Optional[RoleResponse] = None
+
+    class Config:
+        from_attributes = True
+</file>
+
+<file path="backend/app/services/assessment_engine.py">
+from typing import List, Optional, Tuple
+from app.models.mapping import CategoryQuestionMapping
+
+class AssessmentEngine:
+    @staticmethod
+    def get_next_question_details(
+        mappings: List[CategoryQuestionMapping],
+        current_index: int
+    ) -> Tuple[bool, int, Optional[int]]:
+        """
+        Takes list of mappings ordered by display_order and the current question index.
+        Returns:
+            (is_completed: bool, next_index: int, next_question_id: Optional[int])
+        """
+        total = len(mappings)
+        next_index = current_index + 1
+        
+        if next_index >= total:
+            return True, next_index, None
+            
+        next_mapping = mappings[next_index]
+        return False, next_index, next_mapping.question_id
+
+    @staticmethod
+    def calculate_progress(current_index: int, total_questions: int) -> float:
+        if total_questions == 0:
+            return 100.0
+        progress = (current_index / total_questions) * 100.0
+        return round(min(progress, 100.0), 2)
+</file>
+
+<file path="backend/app/services/assessment_service.py">
+from datetime import datetime
+from sqlalchemy.orm import Session
+from fastapi import HTTPException, status
+from app.models.session import AssessmentSession
+from app.models.response import UserResponse
+from app.models.mapping import CategoryQuestionMapping
+from app.models.question import Question
+from app.models.answer import Answer
+from app.models.category import Category
+from app.schemas.assessment import SubmitAnswerRequest
+from app.services.assessment_engine import AssessmentEngine
+from app.core import events
+
+def start_session(db: Session, user_id: int, category_id: int) -> AssessmentSession:
+    # Verify active category
+    category = db.query(Category).filter(
+        Category.id == category_id,
+        Category.is_active == True,
+        Category.is_deleted == False
+    ).first()
+    if not category:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Category not found or inactive"
+        )
+        
+    # Get mapped questions to verify category is not empty
+    mappings = db.query(CategoryQuestionMapping).filter(
+        CategoryQuestionMapping.category_id == category_id,
+        CategoryQuestionMapping.is_active == True,
+        CategoryQuestionMapping.is_deleted == False
+    ).order_by(CategoryQuestionMapping.display_order.asc()).all()
+
+    if not mappings:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No questions mapped to this category yet."
+        )
+
+    # Disable any existing incomplete session for this category/user to avoid overlap
+    db.query(AssessmentSession).filter(
+        AssessmentSession.user_id == user_id,
+        AssessmentSession.category_id == category_id,
+        AssessmentSession.status == "STARTED"
+    ).update({"status": "ABANDONED"})
+
+    first_question_id = mappings[0].question_id
+
+    session = AssessmentSession(
+        user_id=user_id,
+        category_id=category_id,
+        current_question_index=0,
+        current_question_id=first_question_id,
+        status="STARTED",
+        start_time=datetime.utcnow(),
+        progress_percentage=0.00
+    )
+    db.add(session)
+    db.commit()
+    db.refresh(session)
+
+    events.dispatch(events.ASSESSMENT_STARTED, {
+        "session_id": session.id,
+        "user_id": user_id,
+        "category_id": category_id
+    })
+
+    return session
+
+def get_current_question(db: Session, session_id: int, user_id: int) -> Question:
+    session = db.query(AssessmentSession).filter(
+        AssessmentSession.id == session_id,
+        AssessmentSession.user_id == user_id,
+        AssessmentSession.is_deleted == False
+    ).first()
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Assessment session not found"
+        )
+    if session.status == "COMPLETED":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Assessment already completed"
+        )
+
+    question = db.query(Question).filter(
+        Question.id == session.current_question_id,
+        Question.is_deleted == False
+    ).first()
+    return question
+
+def submit_answer(db: Session, user_id: int, request: SubmitAnswerRequest):
+    session = db.query(AssessmentSession).filter(
+        AssessmentSession.id == request.session_id,
+        AssessmentSession.user_id == user_id,
+        AssessmentSession.is_deleted == False
+    ).first()
+    
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Session not found"
+        )
+    if session.status != "STARTED":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Session is not in active state"
+        )
+
+    # Validate question and answer
+    answer = db.query(Answer).filter(
+        Answer.id == request.answer_id,
+        Answer.question_id == request.question_id,
+        Answer.is_active == True,
+        Answer.is_deleted == False
+    ).first()
+    if not answer:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid answer selection for this question"
+        )
+
+    # Save User Response (upsert or insert)
+    # Check if response already exists for this session-question
+    existing_resp = db.query(UserResponse).filter(
+        UserResponse.session_id == session.id,
+        UserResponse.question_id == request.question_id
+    ).first()
+
+    if existing_resp:
+        existing_resp.answer_id = request.answer_id
+        existing_resp.timestamp = datetime.utcnow()
+    else:
+        new_resp = UserResponse(
+            session_id=session.id,
+            user_id=user_id,
+            question_id=request.question_id,
+            answer_id=request.answer_id,
+            timestamp=datetime.utcnow()
+        )
+        db.add(new_resp)
+
+    # Load all category mapping configuration
+    mappings = db.query(CategoryQuestionMapping).filter(
+        CategoryQuestionMapping.category_id == session.category_id,
+        CategoryQuestionMapping.is_active == True,
+        CategoryQuestionMapping.is_deleted == False
+    ).order_by(CategoryQuestionMapping.display_order.asc()).all()
+
+    total_questions = len(mappings)
+    
+    # Calculate progress
+    # Progress is current index + 1 / total
+    progress = AssessmentEngine.calculate_progress(session.current_question_index + 1, total_questions)
+    session.progress_percentage = progress
+
+    # Run core engine logic to get next question details
+    is_completed, next_index, next_q_id = AssessmentEngine.get_next_question_details(
+        mappings, session.current_question_index
+    )
+
+    events.dispatch(events.QUESTION_ANSWERED, {
+        "session_id": session.id,
+        "user_id": user_id,
+        "question_id": request.question_id,
+        "answer_id": request.answer_id
+    })
+
+    next_question = None
+
+    if is_completed:
+        session.status = "COMPLETED"
+        session.completion_time = datetime.utcnow()
+        db.commit()
+        db.refresh(session)
+        events.dispatch(events.ASSESSMENT_COMPLETED, {
+            "session_id": session.id,
+            "user_id": user_id,
+            "category_id": session.category_id
+        })
+    else:
+        session.current_question_index = next_index
+        session.current_question_id = next_q_id
+        db.commit()
+        db.refresh(session)
+        
+        # Load next question payload
+        next_question = db.query(Question).filter(Question.id == next_q_id).first()
+
+    return {
+        "success": True,
+        "is_completed": is_completed,
+        "progress_percentage": float(session.progress_percentage),
+        "next_question": next_question
+    }
+
+def get_user_assessment_history(db: Session, user_id: int):
+    sessions = db.query(AssessmentSession).filter(
+        AssessmentSession.user_id == user_id,
+        AssessmentSession.is_deleted == False
+    ).order_by(AssessmentSession.start_time.desc()).all()
+    
+    history = []
+    for s in sessions:
+        category = db.query(Category).filter(Category.id == s.category_id).first()
+        category_name = category.name if category else "Unknown"
+        
+        # Fetch responses inside session
+        db_responses = db.query(UserResponse).filter(UserResponse.session_id == s.id).all()
+        
+        responses_payload = []
+        for r in db_responses:
+            q = db.query(Question).filter(Question.id == r.question_id).first()
+            a = db.query(Answer).filter(Answer.id == r.answer_id).first()
+            
+            responses_payload.append({
+                "id": r.id,
+                "session_id": r.session_id,
+                "question_id": r.question_id,
+                "question_text": q.question_text if q else "",
+                "answer_id": r.answer_id,
+                "answer_text": a.answer_text if a else "",
+                "timestamp": r.timestamp
+            })
+            
+        history.append({
+            "session": s,
+            "category_name": category_name,
+            "responses": responses_payload
+        })
+    return history
+</file>
+
+<file path="backend/app/services/auth_service.py">
+from sqlalchemy.orm import Session
+from fastapi import HTTPException, status
+from app.models.user import User
+from app.models.role import Role
+from app.models.user_profile import UserProfile
+from app.models.registration_counter import RegistrationCounter
+from app.schemas.user import UserCreate
+from app.schemas.profile import ProfileCreate
+from app.core import security
+from app.core import events
+
+def get_role_by_name(db: Session, name: str) -> Role:
+    return db.query(Role).filter(Role.name == name).first()
+
+def register_user(db: Session, user_in: UserCreate) -> User:
+    # Check if user already exists
+    existing_user = db.query(User).filter(
+        (User.email == user_in.email) | (User.username == user_in.username)
+    ).first()
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username or email already registered"
+        )
+    
+    # Get standard Student role
+    student_role = get_role_by_name(db, "Student")
+    if not student_role:
+        # Fallback if roles not seeded yet
+        student_role = Role(name="Student", description="Student Role")
+        db.add(student_role)
+        db.commit()
+        db.refresh(student_role)
+
+    hashed_pw = security.get_password_hash(user_in.password)
+    db_user = User(
+        username=user_in.username,
+        email=user_in.email,
+        password_hash=hashed_pw,
+        role_id=student_role.id
+    )
+    db.add(db_user)
+    db.commit()
+    db.refresh(db_user)
+
+    # Publish registration event
+    events.dispatch(events.USER_REGISTERED, {"user_id": db_user.id, "username": db_user.username})
+    
+    return db_user
+
+def authenticate_user(db: Session, username_or_email: str, password: str) -> User:
+    user = db.query(User).filter(
+        (User.email == username_or_email) | (User.username == username_or_email)
+    ).first()
+    if not user or not security.verify_password(password, user.password_hash):
+        return None
+    return user
+
+def create_user_profile(db: Session, user_id: int, profile_in: ProfileCreate) -> UserProfile:
+    # Check if user already has a profile
+    existing_profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
+    if existing_profile:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Profile already exists for this user"
+        )
+        
+    # Transactional increment of the counter
+    # Use select for update to lock the row for thread safety
+    counter = db.query(RegistrationCounter).filter(
+        RegistrationCounter.district_code == profile_in.district_code,
+        RegistrationCounter.area_code == profile_in.area_code,
+        RegistrationCounter.category_code == profile_in.category_code
+    ).with_for_update().first()
+
+    if not counter:
+        counter = RegistrationCounter(
+            district_code=profile_in.district_code,
+            area_code=profile_in.area_code,
+            category_code=profile_in.category_code,
+            current_number=1
+        )
+        db.add(counter)
+    else:
+        counter.current_number += 1
+
+    # Format running number as 3-digit zero-padded string (e.g. 001, 002)
+    running_str = f"{counter.current_number:03d}"
+    reg_number = f"{profile_in.district_code}-{profile_in.area_code}-{profile_in.category_code}-{running_str}"
+
+    profile = UserProfile(
+        user_id=user_id,
+        first_name=profile_in.first_name,
+        last_name=profile_in.last_name,
+        phone=profile_in.phone,
+        district_code=profile_in.district_code,
+        area_code=profile_in.area_code,
+        category_code=profile_in.category_code,
+        running_number=counter.current_number,
+        registration_number=reg_number
+    )
+    db.add(profile)
+    db.commit()
+    db.refresh(profile)
+
+    # Publish profile completed event
+    events.dispatch(events.PROFILE_COMPLETED, {
+        "user_id": user_id,
+        "registration_number": reg_number,
+        "first_name": profile.first_name,
+        "last_name": profile.last_name
+    })
+
+    return profile
+</file>
+
+<file path="backend/app/services/category_service.py">
+from sqlalchemy.orm import Session
+from app.models.category import Category
+from app.models.mapping import CategoryQuestionMapping
+from app.schemas.category import CategoryCreate, MappingCreate
+
+def get_active_categories(db: Session):
+    return db.query(Category).filter(Category.is_active == True, Category.is_deleted == False).all()
+
+def create_category(db: Session, category_in: CategoryCreate) -> Category:
+    db_cat = Category(
+        name=category_in.name,
+        description=category_in.description,
+        is_active=category_in.is_active
+    )
+    db.add(db_cat)
+    db.commit()
+    db.refresh(db_cat)
+    return db_cat
+
+def create_mapping(db: Session, mapping_in: MappingCreate) -> CategoryQuestionMapping:
+    # Disable duplicate mappings if any exist
+    db.query(CategoryQuestionMapping).filter(
+        CategoryQuestionMapping.category_id == mapping_in.category_id,
+        CategoryQuestionMapping.question_id == mapping_in.question_id
+    ).update({"is_deleted": True})
+    
+    db_map = CategoryQuestionMapping(
+        category_id=mapping_in.category_id,
+        question_id=mapping_in.question_id,
+        display_order=mapping_in.display_order
+    )
+    db.add(db_map)
+    db.commit()
+    db.refresh(db_map)
+    return db_map
+</file>
+
+<file path="backend/app/services/question_service.py">
+from sqlalchemy.orm import Session
+from fastapi import HTTPException, status
+from app.models.question import Question
+from app.models.answer import Answer
+from app.models.mapping import CategoryQuestionMapping
+from app.schemas.question import QuestionCreate
+
+def create_question(db: Session, question_in: QuestionCreate) -> Question:
+    # Check duplicate code
+    existing_q = db.query(Question).filter(Question.code == question_in.code).first()
+    if existing_q:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Question with code '{question_in.code}' already exists"
+        )
+        
+    db_q = Question(
+        code=question_in.code,
+        question_text=question_in.question_text,
+        question_type=question_in.question_type,
+        status=question_in.status
+    )
+    db.add(db_q)
+    db.commit()
+    db.refresh(db_q)
+    
+    # Predefined answers
+    for idx, ans in enumerate(question_in.answers):
+        db_ans = Answer(
+            question_id=db_q.id,
+            answer_text=ans.answer_text,
+            display_order=ans.display_order,
+            is_active=ans.is_active
+        )
+        db.add(db_ans)
+    db.commit()
+    db.refresh(db_q)
+    return db_q
+
+def get_questions_by_category(db: Session, category_id: int):
+    # Query join CategoryQuestionMapping -> Question -> Answer
+    mappings = db.query(CategoryQuestionMapping).filter(
+        CategoryQuestionMapping.category_id == category_id,
+        CategoryQuestionMapping.is_active == True,
+        CategoryQuestionMapping.is_deleted == False
+    ).order_by(CategoryQuestionMapping.display_order.asc()).all()
+    
+    questions = []
+    for m in mappings:
+        q = db.query(Question).filter(
+            Question.id == m.question_id,
+            Question.is_deleted == False,
+            Question.status == "ACTIVE"
+        ).first()
+        if q:
+            questions.append(q)
+    return questions
+</file>
+
+<file path="backend/app/__init__.py">
+# Package marker
+</file>
+
+<file path="backend/app/main.py">
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from app.config.settings import settings
+from app.api.router import api_router
+from app.database.init_db import init_db
+from app.database.session import SessionLocal
+
+app = FastAPI(
+    title=settings.PROJECT_NAME,
+    openapi_url=f"{settings.API_V1_STR}/openapi.json"
+)
+
+# Set CORS middleware parameters
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # For MVP, allow all origins. Can be restricted to React host in prod
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+@app.on_event("startup")
+def startup_db_setup():
+    db = SessionLocal()
+    try:
+        init_db(db)
+    finally:
+        db.close()
+
+@app.get("/")
+def read_root():
+    return {"message": "Welcome to Dynamic Assessment Platform Core Engine API"}
+
+app.include_router(api_router, prefix=settings.API_V1_STR)
+</file>
+
+<file path="backend/requirements.txt">
+fastapi==0.111.0
+uvicorn==0.30.1
+sqlalchemy==2.0.31
+pymysql==1.1.1
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+pydantic==2.7.4
+pydantic-settings==2.3.3
+python-multipart==0.0.9
+alembic==1.13.1
+bcrypt==4.1.3
+</file>
+
+<file path="backend/run.py">
+import uvicorn
+
+if __name__ == "__main__":
+    uvicorn.run("app.main:app", host="127.0.0.1", port=8000, reload=True)
+</file>
+
+<file path="frontend/public/favicon.svg">
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="46" fill="none" viewBox="0 0 48 46"><path fill="#863bff" d="M25.946 44.938c-.664.845-2.021.375-2.021-.698V33.937a2.26 2.26 0 0 0-2.262-2.262H10.287c-.92 0-1.456-1.04-.92-1.788l7.48-10.471c1.07-1.497 0-3.578-1.842-3.578H1.237c-.92 0-1.456-1.04-.92-1.788L10.013.474c.214-.297.556-.474.92-.474h28.894c.92 0 1.456 1.04.92 1.788l-7.48 10.471c-1.07 1.498 0 3.579 1.842 3.579h11.377c.943 0 1.473 1.088.89 1.83L25.947 44.94z" style="fill:#863bff;fill:color(display-p3 .5252 .23 1);fill-opacity:1"/><mask id="a" width="48" height="46" x="0" y="0" maskUnits="userSpaceOnUse" style="mask-type:alpha"><path fill="#000" d="M25.842 44.938c-.664.844-2.021.375-2.021-.698V33.937a2.26 2.26 0 0 0-2.262-2.262H10.183c-.92 0-1.456-1.04-.92-1.788l7.48-10.471c1.07-1.498 0-3.579-1.842-3.579H1.133c-.92 0-1.456-1.04-.92-1.787L9.91.473c.214-.297.556-.474.92-.474h28.894c.92 0 1.456 1.04.92 1.788l-7.48 10.471c-1.07 1.498 0 3.578 1.842 3.578h11.377c.943 0 1.473 1.088.89 1.832L25.843 44.94z" style="fill:#000;fill-opacity:1"/></mask><g mask="url(#a)"><g filter="url(#b)"><ellipse cx="5.508" cy="14.704" fill="#ede6ff" rx="5.508" ry="14.704" style="fill:#ede6ff;fill:color(display-p3 .9275 .9033 1);fill-opacity:1" transform="matrix(.00324 1 1 -.00324 -4.47 31.516)"/></g><g filter="url(#c)"><ellipse cx="10.399" cy="29.851" fill="#ede6ff" rx="10.399" ry="29.851" style="fill:#ede6ff;fill:color(display-p3 .9275 .9033 1);fill-opacity:1" transform="matrix(.00324 1 1 -.00324 -39.328 7.883)"/></g><g filter="url(#d)"><ellipse cx="5.508" cy="30.487" fill="#7e14ff" rx="5.508" ry="30.487" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(89.814 -25.913 -14.639)scale(1 -1)"/></g><g filter="url(#e)"><ellipse cx="5.508" cy="30.599" fill="#7e14ff" rx="5.508" ry="30.599" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(89.814 -32.644 -3.334)scale(1 -1)"/></g><g filter="url(#f)"><ellipse cx="5.508" cy="30.599" fill="#7e14ff" rx="5.508" ry="30.599" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="matrix(.00324 1 1 -.00324 -34.34 30.47)"/></g><g filter="url(#g)"><ellipse cx="14.072" cy="22.078" fill="#ede6ff" rx="14.072" ry="22.078" style="fill:#ede6ff;fill:color(display-p3 .9275 .9033 1);fill-opacity:1" transform="rotate(93.35 24.506 48.493)scale(-1 1)"/></g><g filter="url(#h)"><ellipse cx="3.47" cy="21.501" fill="#7e14ff" rx="3.47" ry="21.501" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(89.009 28.708 47.59)scale(-1 1)"/></g><g filter="url(#i)"><ellipse cx="3.47" cy="21.501" fill="#7e14ff" rx="3.47" ry="21.501" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(89.009 28.708 47.59)scale(-1 1)"/></g><g filter="url(#j)"><ellipse cx=".387" cy="8.972" fill="#7e14ff" rx="4.407" ry="29.108" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(39.51 .387 8.972)"/></g><g filter="url(#k)"><ellipse cx="47.523" cy="-6.092" fill="#7e14ff" rx="4.407" ry="29.108" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(37.892 47.523 -6.092)"/></g><g filter="url(#l)"><ellipse cx="41.412" cy="6.333" fill="#47bfff" rx="5.971" ry="9.665" style="fill:#47bfff;fill:color(display-p3 .2799 .748 1);fill-opacity:1" transform="rotate(37.892 41.412 6.333)"/></g><g filter="url(#m)"><ellipse cx="-1.879" cy="38.332" fill="#7e14ff" rx="4.407" ry="29.108" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(37.892 -1.88 38.332)"/></g><g filter="url(#n)"><ellipse cx="-1.879" cy="38.332" fill="#7e14ff" rx="4.407" ry="29.108" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(37.892 -1.88 38.332)"/></g><g filter="url(#o)"><ellipse cx="35.651" cy="29.907" fill="#7e14ff" rx="4.407" ry="29.108" style="fill:#7e14ff;fill:color(display-p3 .4922 .0767 1);fill-opacity:1" transform="rotate(37.892 35.651 29.907)"/></g><g filter="url(#p)"><ellipse cx="38.418" cy="32.4" fill="#47bfff" rx="5.971" ry="15.297" style="fill:#47bfff;fill:color(display-p3 .2799 .748 1);fill-opacity:1" transform="rotate(37.892 38.418 32.4)"/></g></g><defs><filter id="b" width="60.045" height="41.654" x="-19.77" y="16.149" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="7.659"/></filter><filter id="c" width="90.34" height="51.437" x="-54.613" y="-7.533" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="7.659"/></filter><filter id="d" width="79.355" height="29.4" x="-49.64" y="2.03" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="e" width="79.579" height="29.4" x="-45.045" y="20.029" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="f" width="79.579" height="29.4" x="-43.513" y="21.178" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="g" width="74.749" height="58.852" x="15.756" y="-17.901" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="7.659"/></filter><filter id="h" width="61.377" height="25.362" x="23.548" y="2.284" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="i" width="61.377" height="25.362" x="23.548" y="2.284" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="j" width="56.045" height="63.649" x="-27.636" y="-22.853" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="k" width="54.814" height="64.646" x="20.116" y="-38.415" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="l" width="33.541" height="35.313" x="24.641" y="-11.323" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="m" width="54.814" height="64.646" x="-29.286" y="6.009" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="n" width="54.814" height="64.646" x="-29.286" y="6.009" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="o" width="54.814" height="64.646" x="8.244" y="-2.416" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter><filter id="p" width="39.409" height="43.623" x="18.713" y="10.588" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17158" stdDeviation="4.596"/></filter></defs></svg>
+</file>
+
+<file path="frontend/public/icons.svg">
+<svg xmlns="http://www.w3.org/2000/svg">
+  <symbol id="bluesky-icon" viewBox="0 0 16 17">
+    <g clip-path="url(#bluesky-clip)"><path fill="#08060d" d="M7.75 7.735c-.693-1.348-2.58-3.86-4.334-5.097-1.68-1.187-2.32-.981-2.74-.79C.188 2.065.1 2.812.1 3.251s.241 3.602.398 4.13c.52 1.744 2.367 2.333 4.07 2.145-2.495.37-4.71 1.278-1.805 4.512 3.196 3.309 4.38-.71 4.987-2.746.608 2.036 1.307 5.91 4.93 2.746 2.72-2.746.747-4.143-1.747-4.512 1.702.189 3.55-.4 4.07-2.145.156-.528.397-3.691.397-4.13s-.088-1.186-.575-1.406c-.42-.19-1.06-.395-2.741.79-1.755 1.24-3.64 3.752-4.334 5.099"/></g>
+    <defs><clipPath id="bluesky-clip"><path fill="#fff" d="M.1.85h15.3v15.3H.1z"/></clipPath></defs>
+  </symbol>
+  <symbol id="discord-icon" viewBox="0 0 20 19">
+    <path fill="#08060d" d="M16.224 3.768a14.5 14.5 0 0 0-3.67-1.153c-.158.286-.343.67-.47.976a13.5 13.5 0 0 0-4.067 0c-.128-.306-.317-.69-.476-.976A14.4 14.4 0 0 0 3.868 3.77C1.546 7.28.916 10.703 1.231 14.077a14.7 14.7 0 0 0 4.5 2.306q.545-.748.965-1.587a9.5 9.5 0 0 1-1.518-.74q.191-.14.372-.293c2.927 1.369 6.107 1.369 8.999 0q.183.152.372.294-.723.437-1.52.74.418.838.963 1.588a14.6 14.6 0 0 0 4.504-2.308c.37-3.911-.63-7.302-2.644-10.309m-9.13 8.234c-.878 0-1.599-.82-1.599-1.82 0-.998.705-1.82 1.6-1.82.894 0 1.614.82 1.599 1.82.001 1-.705 1.82-1.6 1.82m5.91 0c-.878 0-1.599-.82-1.599-1.82 0-.998.705-1.82 1.6-1.82.893 0 1.614.82 1.599 1.82 0 1-.706 1.82-1.6 1.82"/>
+  </symbol>
+  <symbol id="documentation-icon" viewBox="0 0 21 20">
+    <path fill="none" stroke="#aa3bff" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.35" d="m15.5 13.333 1.533 1.322c.645.555.967.833.967 1.178s-.322.623-.967 1.179L15.5 18.333m-3.333-5-1.534 1.322c-.644.555-.966.833-.966 1.178s.322.623.966 1.179l1.534 1.321"/>
+    <path fill="none" stroke="#aa3bff" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.35" d="M17.167 10.836v-4.32c0-1.41 0-2.117-.224-2.68-.359-.906-1.118-1.621-2.08-1.96-.599-.21-1.349-.21-2.848-.21-2.623 0-3.935 0-4.983.369-1.684.591-3.013 1.842-3.641 3.428C3 6.449 3 7.684 3 10.154v2.122c0 2.558 0 3.838.706 4.726q.306.383.713.671c.76.536 1.79.64 3.581.66"/>
+    <path fill="none" stroke="#aa3bff" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.35" d="M3 10a2.78 2.78 0 0 1 2.778-2.778c.555 0 1.209.097 1.748-.047.48-.129.854-.503.982-.982.145-.54.048-1.194.048-1.749a2.78 2.78 0 0 1 2.777-2.777"/>
+  </symbol>
+  <symbol id="github-icon" viewBox="0 0 19 19">
+    <path fill="#08060d" fill-rule="evenodd" d="M9.356 1.85C5.05 1.85 1.57 5.356 1.57 9.694a7.84 7.84 0 0 0 5.324 7.44c.387.079.528-.168.528-.376 0-.182-.013-.805-.013-1.454-2.165.467-2.616-.935-2.616-.935-.349-.91-.864-1.143-.864-1.143-.71-.48.051-.48.051-.48.787.051 1.2.805 1.2.805.695 1.194 1.817.857 2.268.649.064-.507.27-.857.49-1.052-1.728-.182-3.545-.857-3.545-3.87 0-.857.31-1.558.8-2.104-.078-.195-.349-1 .077-2.078 0 0 .657-.208 2.14.805a7.5 7.5 0 0 1 1.946-.26c.657 0 1.328.092 1.946.26 1.483-1.013 2.14-.805 2.14-.805.426 1.078.155 1.883.078 2.078.502.546.799 1.247.799 2.104 0 3.013-1.818 3.675-3.558 3.87.284.247.528.714.528 1.454 0 1.052-.012 1.896-.012 2.156 0 .208.142.455.528.377a7.84 7.84 0 0 0 5.324-7.441c.013-4.338-3.48-7.844-7.773-7.844" clip-rule="evenodd"/>
+  </symbol>
+  <symbol id="social-icon" viewBox="0 0 20 20">
+    <path fill="none" stroke="#aa3bff" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.35" d="M12.5 6.667a4.167 4.167 0 1 0-8.334 0 4.167 4.167 0 0 0 8.334 0"/>
+    <path fill="none" stroke="#aa3bff" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.35" d="M2.5 16.667a5.833 5.833 0 0 1 8.75-5.053m3.837.474.513 1.035c.07.144.257.282.414.309l.93.155c.596.1.736.536.307.965l-.723.73a.64.64 0 0 0-.152.531l.207.903c.164.715-.213.991-.84.618l-.872-.52a.63.63 0 0 0-.577 0l-.872.52c-.624.373-1.003.094-.84-.618l.207-.903a.64.64 0 0 0-.152-.532l-.723-.729c-.426-.43-.289-.864.306-.964l.93-.156a.64.64 0 0 0 .412-.31l.513-1.034c.28-.562.735-.562 1.012 0"/>
+  </symbol>
+  <symbol id="x-icon" viewBox="0 0 19 19">
+    <path fill="#08060d" fill-rule="evenodd" d="M1.893 1.98c.052.072 1.245 1.769 2.653 3.77l2.892 4.114c.183.261.333.48.333.486s-.068.089-.152.183l-.522.593-.765.867-3.597 4.087c-.375.426-.734.834-.798.905a1 1 0 0 0-.118.148c0 .01.236.017.664.017h.663l.729-.83c.4-.457.796-.906.879-.999a692 692 0 0 0 1.794-2.038c.034-.037.301-.34.594-.675l.551-.624.345-.392a7 7 0 0 1 .34-.374c.006 0 .93 1.306 2.052 2.903l2.084 2.965.045.063h2.275c1.87 0 2.273-.003 2.266-.021-.008-.02-1.098-1.572-3.894-5.547-2.013-2.862-2.28-3.246-2.273-3.266.008-.019.282-.332 2.085-2.38l2-2.274 1.567-1.782c.022-.028-.016-.03-.65-.03h-.674l-.3.342a871 871 0 0 1-1.782 2.025c-.067.075-.405.458-.75.852a100 100 0 0 1-.803.91c-.148.172-.299.344-.99 1.127-.304.343-.32.358-.345.327-.015-.019-.904-1.282-1.976-2.808L6.365 1.85H1.8zm1.782.91 8.078 11.294c.772 1.08 1.413 1.973 1.425 1.984.016.017.241.02 1.05.017l1.03-.004-2.694-3.766L7.796 5.75 5.722 2.852l-1.039-.004-1.039-.004z" clip-rule="evenodd"/>
+  </symbol>
+</svg>
+</file>
+
+<file path="frontend/src/assets/react.svg">
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" aria-hidden="true" role="img" class="iconify iconify--logos" width="35.93" height="32" preserveAspectRatio="xMidYMid meet" viewBox="0 0 256 228"><path fill="#00D8FF" d="M210.483 73.824a171.49 171.49 0 0 0-8.24-2.597c.465-1.9.893-3.777 1.273-5.621c6.238-30.281 2.16-54.676-11.769-62.708c-13.355-7.7-35.196.329-57.254 19.526a171.23 171.23 0 0 0-6.375 5.848a155.866 155.866 0 0 0-4.241-3.917C100.759 3.829 77.587-4.822 63.673 3.233C50.33 10.957 46.379 33.89 51.995 62.588a170.974 170.974 0 0 0 1.892 8.48c-3.28.932-6.445 1.924-9.474 2.98C17.309 83.498 0 98.307 0 113.668c0 15.865 18.582 31.778 46.812 41.427a145.52 145.52 0 0 0 6.921 2.165a167.467 167.467 0 0 0-2.01 9.138c-5.354 28.2-1.173 50.591 12.134 58.266c13.744 7.926 36.812-.22 59.273-19.855a145.567 145.567 0 0 0 5.342-4.923a168.064 168.064 0 0 0 6.92 6.314c21.758 18.722 43.246 26.282 56.54 18.586c13.731-7.949 18.194-32.003 12.4-61.268a145.016 145.016 0 0 0-1.535-6.842c1.62-.48 3.21-.974 4.76-1.488c29.348-9.723 48.443-25.443 48.443-41.52c0-15.417-17.868-30.326-45.517-39.844Zm-6.365 70.984c-1.4.463-2.836.91-4.3 1.345c-3.24-10.257-7.612-21.163-12.963-32.432c5.106-11 9.31-21.767 12.459-31.957c2.619.758 5.16 1.557 7.61 2.4c23.69 8.156 38.14 20.213 38.14 29.504c0 9.896-15.606 22.743-40.946 31.14Zm-10.514 20.834c2.562 12.94 2.927 24.64 1.23 33.787c-1.524 8.219-4.59 13.698-8.382 15.893c-8.067 4.67-25.32-1.4-43.927-17.412a156.726 156.726 0 0 1-6.437-5.87c7.214-7.889 14.423-17.06 21.459-27.246c12.376-1.098 24.068-2.894 34.671-5.345a134.17 134.17 0 0 1 1.386 6.193ZM87.276 214.515c-7.882 2.783-14.16 2.863-17.955.675c-8.075-4.657-11.432-22.636-6.853-46.752a156.923 156.923 0 0 1 1.869-8.499c10.486 2.32 22.093 3.988 34.498 4.994c7.084 9.967 14.501 19.128 21.976 27.15a134.668 134.668 0 0 1-4.877 4.492c-9.933 8.682-19.886 14.842-28.658 17.94ZM50.35 144.747c-12.483-4.267-22.792-9.812-29.858-15.863c-6.35-5.437-9.555-10.836-9.555-15.216c0-9.322 13.897-21.212 37.076-29.293c2.813-.98 5.757-1.905 8.812-2.773c3.204 10.42 7.406 21.315 12.477 32.332c-5.137 11.18-9.399 22.249-12.634 32.792a134.718 134.718 0 0 1-6.318-1.979Zm12.378-84.26c-4.811-24.587-1.616-43.134 6.425-47.789c8.564-4.958 27.502 2.111 47.463 19.835a144.318 144.318 0 0 1 3.841 3.545c-7.438 7.987-14.787 17.08-21.808 26.988c-12.04 1.116-23.565 2.908-34.161 5.309a160.342 160.342 0 0 1-1.76-7.887Zm110.427 27.268a347.8 347.8 0 0 0-7.785-12.803c8.168 1.033 15.994 2.404 23.343 4.08c-2.206 7.072-4.956 14.465-8.193 22.045a381.151 381.151 0 0 0-7.365-13.322Zm-45.032-43.861c5.044 5.465 10.096 11.566 15.065 18.186a322.04 322.04 0 0 0-30.257-.006c4.974-6.559 10.069-12.652 15.192-18.18ZM82.802 87.83a323.167 323.167 0 0 0-7.227 13.238c-3.184-7.553-5.909-14.98-8.134-22.152c7.304-1.634 15.093-2.97 23.209-3.984a321.524 321.524 0 0 0-7.848 12.897Zm8.081 65.352c-8.385-.936-16.291-2.203-23.593-3.793c2.26-7.3 5.045-14.885 8.298-22.6a321.187 321.187 0 0 0 7.257 13.246c2.594 4.48 5.28 8.868 8.038 13.147Zm37.542 31.03c-5.184-5.592-10.354-11.779-15.403-18.433c4.902.192 9.899.29 14.978.29c5.218 0 10.376-.117 15.453-.343c-4.985 6.774-10.018 12.97-15.028 18.486Zm52.198-57.817c3.422 7.8 6.306 15.345 8.596 22.52c-7.422 1.694-15.436 3.058-23.88 4.071a382.417 382.417 0 0 0 7.859-13.026a347.403 347.403 0 0 0 7.425-13.565Zm-16.898 8.101a358.557 358.557 0 0 1-12.281 19.815a329.4 329.4 0 0 1-23.444.823c-7.967 0-15.716-.248-23.178-.732a310.202 310.202 0 0 1-12.513-19.846h.001a307.41 307.41 0 0 1-10.923-20.627a310.278 310.278 0 0 1 10.89-20.637l-.001.001a307.318 307.318 0 0 1 12.413-19.761c7.613-.576 15.42-.876 23.31-.876H128c7.926 0 15.743.303 23.354.883a329.357 329.357 0 0 1 12.335 19.695a358.489 358.489 0 0 1 11.036 20.54a329.472 329.472 0 0 1-11 20.722Zm22.56-122.124c8.572 4.944 11.906 24.881 6.52 51.026c-.344 1.668-.73 3.367-1.15 5.09c-10.622-2.452-22.155-4.275-34.23-5.408c-7.034-10.017-14.323-19.124-21.64-27.008a160.789 160.789 0 0 1 5.888-5.4c18.9-16.447 36.564-22.941 44.612-18.3ZM128 90.808c12.625 0 22.86 10.235 22.86 22.86s-10.235 22.86-22.86 22.86s-22.86-10.235-22.86-22.86s10.235-22.86 22.86-22.86Z"></path></svg>
+</file>
+
+<file path="frontend/src/assets/vite.svg">
+<svg xmlns="http://www.w3.org/2000/svg" width="77" height="47" fill="none" aria-labelledby="vite-logo-title" viewBox="0 0 77 47"><title id="vite-logo-title">Vite</title><style>.parenthesis{fill:#000}@media (prefers-color-scheme:dark){.parenthesis{fill:#fff}}</style><path fill="#9135ff" d="M40.151 45.71c-.663.844-2.02.374-2.02-.699V34.708a2.26 2.26 0 0 0-2.262-2.262H24.493c-.92 0-1.457-1.04-.92-1.788l7.479-10.471c1.07-1.498 0-3.578-1.842-3.578H15.443c-.92 0-1.456-1.04-.92-1.788l9.696-13.576c.213-.297.556-.474.92-.474h28.894c.92 0 1.456 1.04.92 1.788l-7.48 10.472c-1.07 1.497 0 3.578 1.842 3.578h11.376c.944 0 1.474 1.087.89 1.83L40.153 45.712z"/><mask id="a" width="48" height="47" x="14" y="0" maskUnits="userSpaceOnUse" style="mask-type:alpha"><path fill="#000" d="M40.047 45.71c-.663.843-2.02.374-2.02-.699V34.708a2.26 2.26 0 0 0-2.262-2.262H24.389c-.92 0-1.457-1.04-.92-1.788l7.479-10.472c1.07-1.497 0-3.578-1.842-3.578H15.34c-.92 0-1.456-1.04-.92-1.788l9.696-13.575c.213-.297.556-.474.92-.474H53.93c.92 0 1.456 1.04.92 1.788L47.37 13.03c-1.07 1.498 0 3.578 1.842 3.578h11.376c.944 0 1.474 1.088.89 1.831L40.049 45.712z"/></mask><g mask="url(#a)"><g filter="url(#b)"><ellipse cx="5.508" cy="14.704" fill="#eee6ff" rx="5.508" ry="14.704" transform="rotate(269.814 20.96 11.29)scale(-1 1)"/></g><g filter="url(#c)"><ellipse cx="10.399" cy="29.851" fill="#eee6ff" rx="10.399" ry="29.851" transform="rotate(89.814 -16.902 -8.275)scale(1 -1)"/></g><g filter="url(#d)"><ellipse cx="5.508" cy="30.487" fill="#8900ff" rx="5.508" ry="30.487" transform="rotate(89.814 -19.197 -7.127)scale(1 -1)"/></g><g filter="url(#e)"><ellipse cx="5.508" cy="30.599" fill="#8900ff" rx="5.508" ry="30.599" transform="rotate(89.814 -25.928 4.177)scale(1 -1)"/></g><g filter="url(#f)"><ellipse cx="5.508" cy="30.599" fill="#8900ff" rx="5.508" ry="30.599" transform="rotate(89.814 -25.738 5.52)scale(1 -1)"/></g><g filter="url(#g)"><ellipse cx="14.072" cy="22.078" fill="#eee6ff" rx="14.072" ry="22.078" transform="rotate(93.35 31.245 55.578)scale(-1 1)"/></g><g filter="url(#h)"><ellipse cx="3.47" cy="21.501" fill="#8900ff" rx="3.47" ry="21.501" transform="rotate(89.009 35.419 55.202)scale(-1 1)"/></g><g filter="url(#i)"><ellipse cx="3.47" cy="21.501" fill="#8900ff" rx="3.47" ry="21.501" transform="rotate(89.009 35.419 55.202)scale(-1 1)"/></g><g filter="url(#j)"><ellipse cx="14.592" cy="9.743" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(39.51 14.592 9.743)"/></g><g filter="url(#k)"><ellipse cx="61.728" cy="-5.321" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 61.728 -5.32)"/></g><g filter="url(#l)"><ellipse cx="55.618" cy="7.104" fill="#00c2ff" rx="5.971" ry="9.665" transform="rotate(37.892 55.618 7.104)"/></g><g filter="url(#m)"><ellipse cx="12.326" cy="39.103" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 12.326 39.103)"/></g><g filter="url(#n)"><ellipse cx="12.326" cy="39.103" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 12.326 39.103)"/></g><g filter="url(#o)"><ellipse cx="49.857" cy="30.678" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 49.857 30.678)"/></g><g filter="url(#p)"><ellipse cx="52.623" cy="33.171" fill="#00c2ff" rx="5.971" ry="15.297" transform="rotate(37.892 52.623 33.17)"/></g></g><path d="M6.919 0c-9.198 13.166-9.252 33.575 0 46.789h6.215c-9.25-13.214-9.196-33.623 0-46.789zm62.424 0h-6.215c9.198 13.166 9.252 33.575 0 46.789h6.215c9.25-13.214 9.196-33.623 0-46.789" class="parenthesis"/><defs><filter id="b" width="60.045" height="41.654" x="-5.564" y="16.92" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="7.659"/></filter><filter id="c" width="90.34" height="51.437" x="-40.407" y="-6.762" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="7.659"/></filter><filter id="d" width="79.355" height="29.4" x="-35.435" y="2.801" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="e" width="79.579" height="29.4" x="-30.84" y="20.8" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="f" width="79.579" height="29.4" x="-29.307" y="21.949" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="g" width="74.749" height="58.852" x="29.961" y="-17.13" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="7.659"/></filter><filter id="h" width="61.377" height="25.362" x="37.754" y="3.055" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="i" width="61.377" height="25.362" x="37.754" y="3.055" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="j" width="56.045" height="63.649" x="-13.43" y="-22.082" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="k" width="54.814" height="64.646" x="34.321" y="-37.644" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="l" width="33.541" height="35.313" x="38.847" y="-10.552" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="m" width="54.814" height="64.646" x="-15.081" y="6.78" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="n" width="54.814" height="64.646" x="-15.081" y="6.78" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="o" width="54.814" height="64.646" x="22.45" y="-1.645" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="p" width="39.409" height="43.623" x="32.919" y="11.36" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter></defs></svg>
+</file>
+
+<file path="frontend/src/components/Loader.css">
+.loader-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(12, 8, 29, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+.loader-spinner {
+  position: relative;
+  width: 100px;
+  height: 100px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.loader-ring {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  border: 3px solid transparent;
+  animation: spinRing 1.4s linear infinite;
+}
+
+.loader-ring:nth-child(1) {
+  border-top-color: #8a2be2;
+  animation-delay: 0s;
+}
+
+.loader-ring:nth-child(2) {
+  width: 75%;
+  height: 75%;
+  border-right-color: #00f2fe;
+  animation-delay: 0.15s;
+  animation-direction: reverse;
+}
+
+.loader-ring:nth-child(3) {
+  width: 50%;
+  height: 50%;
+  border-bottom-color: #ff007f;
+  animation-delay: 0.3s;
+}
+
+.loader-text {
+  font-size: 0.7rem;
+  color: #a9a9d6;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+@keyframes spinRing {
+  to { transform: rotate(360deg); }
+}
+</file>
+
+<file path="frontend/src/components/Loader.jsx">
+import './Loader.css';
+
+export default function Loader() {
+  return (
+    <div className="loader-overlay">
+      <div className="loader-spinner">
+        <div className="loader-ring"></div>
+        <div className="loader-ring"></div>
+        <div className="loader-ring"></div>
+        <span className="loader-text">Loading...</span>
+      </div>
+    </div>
+  );
+}
+</file>
+
+<file path="frontend/src/components/Navbar.css">
+.navbar {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: rgba(15, 12, 32, 0.75);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.navbar-inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0.8rem 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.navbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  text-decoration: none;
+  font-family: 'Outfit', sans-serif;
+  font-weight: 800;
+  font-size: 1.3rem;
+}
+
+.brand-icon {
+  color: #8a2be2;
+  font-size: 1.5rem;
+}
+
+.brand-text {
+  background: linear-gradient(90deg, #fff, #00f2fe);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.navbar-links {
+  display: flex;
+  gap: 1.5rem;
+}
+
+.nav-link {
+  color: #a9a9d6;
+  text-decoration: none;
+  font-size: 0.9rem;
+  font-weight: 500;
+  transition: color 0.2s;
+  position: relative;
+}
+
+.nav-link:hover {
+  color: #fff;
+}
+
+.nav-link::after {
+  content: '';
+  position: absolute;
+  bottom: -4px;
+  left: 0;
+  width: 0;
+  height: 2px;
+  background: linear-gradient(90deg, #8a2be2, #00f2fe);
+  transition: width 0.3s;
+}
+
+.nav-link:hover::after {
+  width: 100%;
+}
+
+.navbar-user {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.user-greeting {
+  color: #a9a9d6;
+  font-size: 0.85rem;
+}
+
+.btn-logout {
+  background: rgba(255, 23, 68, 0.15);
+  border: 1px solid rgba(255, 23, 68, 0.3);
+  color: #ff1744;
+  padding: 0.4rem 1rem;
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: 'Outfit', sans-serif;
+  font-weight: 600;
+  font-size: 0.85rem;
+  transition: all 0.2s;
+}
+
+.btn-logout:hover {
+  background: rgba(255, 23, 68, 0.3);
+}
+</file>
+
+<file path="frontend/src/components/Navbar.jsx">
+import { Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
+import './Navbar.css';
+
+export default function Navbar() {
+  const { user, logout, isAuthenticated } = useAuth();
+  const navigate = useNavigate();
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
+
+  if (!isAuthenticated) return null;
+
+  const isAdmin = user?.role?.name === 'Admin' || user?.role_id === 1;
+
+  return (
+    <nav className="navbar">
+      <div className="navbar-inner">
+        <Link to="/" className="navbar-brand">
+          <span className="brand-icon">◆</span>
+          <span className="brand-text">DAP</span>
+        </Link>
+
+        <div className="navbar-links">
+          <Link to="/" className="nav-link">Dashboard</Link>
+          {isAdmin && <Link to="/admin" className="nav-link">Admin Panel</Link>}
+          <Link to="/history" className="nav-link">History</Link>
+        </div>
+
+        <div className="navbar-user">
+          <span className="user-greeting">Hi, {user?.username}</span>
+          <button className="btn-logout" onClick={handleLogout}>Logout</button>
+        </div>
+      </div>
+    </nav>
+  );
+}
+</file>
+
+<file path="frontend/src/context/AuthContext.jsx">
+import { createContext, useState, useEffect, useContext } from 'react';
+import { getMe } from '../services/auth';
+
+const AuthContext = createContext(null);
+
+export function AuthProvider({ children }) {
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+
+  const loadUser = async () => {
+    const token = localStorage.getItem('access_token');
+    if (!token) {
+      setLoading(false);
+      return;
+    }
+    try {
+      const res = await getMe();
+      setUser(res.data);
+      setIsAuthenticated(true);
+    } catch {
+      localStorage.removeItem('access_token');
+      setUser(null);
+      setIsAuthenticated(false);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadUser();
+  }, []);
+
+  const login = (token, userData) => {
+    localStorage.setItem('access_token', token);
+    setUser(userData);
+    setIsAuthenticated(true);
+  };
+
+  const logout = () => {
+    localStorage.removeItem('access_token');
+    setUser(null);
+    setIsAuthenticated(false);
+  };
+
+  return (
+    <AuthContext.Provider value={{ user, loading, isAuthenticated, login, logout, loadUser }}>
+      {children}
+    </AuthContext.Provider>
+  );
+}
+
+export function useAuth() {
+  const context = useContext(AuthContext);
+  if (!context) throw new Error('useAuth must be used inside AuthProvider');
+  return context;
+}
+
+export default AuthContext;
+</file>
+
+<file path="frontend/src/layouts/AuthLayout.jsx">
+import { Outlet } from 'react-router-dom';
+
+export default function AuthLayout() {
+  return (
+    <div className="auth-container">
+      <Outlet />
+    </div>
+  );
+}
+</file>
+
+<file path="frontend/src/layouts/DashboardLayout.jsx">
+import { Outlet } from 'react-router-dom';
+import Navbar from '../components/Navbar';
+
+export default function DashboardLayout() {
+  return (
+    <>
+      <Navbar />
+      <main className="container animate-fade-in">
+        <Outlet />
+      </main>
+    </>
+  );
+}
+</file>
+
+<file path="frontend/src/pages/admin/AdminCategories.css">
+.admin-categories-wrapper {
+  padding: 1.5rem 0;
+}
+
+.admin-categories-wrapper h2 {
+  font-size: 1.8rem;
+  margin-bottom: 2rem;
+  text-align: left;
+}
+
+.category-error {
+  background: rgba(255, 23, 68, 0.15);
+  border: 1px solid rgba(255, 23, 68, 0.3);
+  color: #ff1744;
+  padding: 0.8rem;
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+  font-size: 0.9rem;
+}
+
+.admin-form {
+  margin-bottom: 2rem;
+}
+
+.form-title {
+  font-size: 1.1rem;
+  color: #fff;
+  margin-bottom: 1.5rem;
+}
+
+.form-row {
+  display: flex;
+  gap: 1.5rem;
+  margin-bottom: 1rem;
+}
+
+.form-row .input-group {
+  flex: 1;
+}
+
+.form-row .flex-2 {
+  flex: 2;
+}
+
+.form-bottom-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 1rem;
+}
+
+.checkbox-container {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.checkbox-container input {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+.checkbox-label {
+  font-size: 0.95rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.admin-list {
+  padding: 2rem;
+}
+
+.admin-list h3 {
+  margin-bottom: 1.5rem;
+  color: #fff;
+}
+
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.admin-table th {
+  text-align: left;
+  padding: 0.8rem 1rem;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.admin-table td {
+  padding: 1rem;
+  font-size: 0.95rem;
+  color: var(--text-secondary);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+.admin-table tr:last-child td {
+  border-bottom: none;
+}
+
+@media (max-width: 768px) {
+  .form-row {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .form-bottom-row {
+    flex-direction: column;
+    gap: 1rem;
+    align-items: flex-start;
+  }
+  .form-bottom-row .btn {
+    width: 100%;
+  }
+}
+</file>
+
+<file path="frontend/src/pages/admin/AdminCategories.jsx">
+import { useState, useEffect } from 'react';
+import { getCategories, createCategory } from '../../services/categories';
+import Loader from '../../components/Loader';
+import './AdminCategories.css';
+
+export default function AdminCategories() {
+  const [categories, setCategories] = useState([]);
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [isActive, setIsActive] = useState(true);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  async function loadCategories() {
+    try {
+      const res = await getCategories();
+      setCategories(res.data);
+    } catch (err) {
+      setError('Failed to load categories');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadCategories();
+  }, []);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setSubmitting(true);
+    setError('');
+
+    try {
+      await createCategory({ name, description, is_active: isActive });
+      setName('');
+      setDescription('');
+      setIsActive(true);
+      await loadCategories();
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Failed to create category');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (loading) return <Loader />;
+
+  return (
+    <div className="admin-categories-wrapper animate-fade-in">
+      <h2>Manage Categories</h2>
+      
+      {error && <div className="category-error">{error}</div>}
+
+      <div className="admin-form glass-panel">
+        <h3 className="form-title">Create New Category</h3>
+        <form onSubmit={handleSubmit}>
+          <div className="form-row">
+            <div className="input-group">
+              <label className="input-label">Category Name</label>
+              <input
+                type="text"
+                className="input-field"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                required
+                placeholder="e.g. Student"
+              />
+            </div>
+            
+            <div className="input-group flex-2">
+              <label className="input-label">Description</label>
+              <input
+                type="text"
+                className="input-field"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Description of target group"
+              />
+            </div>
+          </div>
+
+          <div className="form-bottom-row">
+            <label className="checkbox-container">
+              <input
+                type="checkbox"
+                checked={isActive}
+                onChange={(e) => setIsActive(e.target.checked)}
+              />
+              <span className="checkbox-label">Active / Available</span>
+            </label>
+
+            <button type="submit" className={`btn ${submitting ? 'btn-disabled' : ''}`} disabled={submitting}>
+              {submitting ? 'Adding...' : 'Add Category'}
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <div className="admin-list glass-panel">
+        <h3>Existing Categories</h3>
+        <table className="admin-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Name</th>
+              <th>Description</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {categories.map((cat) => (
+              <tr key={cat.id}>
+                <td>{cat.id}</td>
+                <td><strong>{cat.name}</strong></td>
+                <td>{cat.description || '-'}</td>
+                <td>
+                  <span className={`status-badge status-${cat.is_active ? 'completed' : 'abandoned'}`}>
+                    {cat.is_active ? 'Active' : 'Inactive'}
+                  </span>
+                </td>
+              </tr>
+            ))}
+            {categories.length === 0 && (
+              <tr>
+                <td colSpan="4" className="text-center">No categories created yet.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+</file>
+
+<file path="frontend/src/pages/admin/AdminDashboard.css">
+.admin-dashboard-wrapper {
+  padding: 2rem 0;
+}
+
+.admin-header {
+  text-align: center;
+  margin-bottom: 4rem;
+}
+
+.admin-subtitle {
+  color: var(--text-secondary);
+  font-size: 1.1rem;
+  margin-top: 0.5rem;
+}
+
+.admin-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 2rem;
+}
+
+.admin-card {
+  text-decoration: none;
+  color: inherit;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 0.8rem;
+  cursor: pointer;
+  padding: 3rem 2rem;
+  transition: var(--transition-smooth);
+}
+
+.admin-card:hover {
+  transform: translateY(-4px);
+  border-color: var(--primary);
+  box-shadow: 0 0 25px var(--primary-glow);
+}
+
+.admin-card-icon {
+  font-size: 3rem;
+  margin-bottom: 0.5rem;
+}
+
+.admin-card h3 {
+  font-size: 1.3rem;
+  color: #fff;
+}
+
+.admin-card p {
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+</file>
+
+<file path="frontend/src/pages/admin/AdminDashboard.jsx">
+import { Link } from 'react-router-dom';
+import './AdminDashboard.css';
+
+export default function AdminDashboard() {
+  return (
+    <div className="admin-dashboard-wrapper">
+      <div className="admin-header">
+        <h1 className="gradient-text">Admin Control Panel</h1>
+        <p className="admin-subtitle">Configure, seed and manage the core assessment data structures</p>
+      </div>
+
+      <div className="admin-grid">
+        <Link to="/admin/categories" className="admin-card glass-panel animate-fade-in">
+          <div className="admin-card-icon">📋</div>
+          <h3>Manage Categories</h3>
+          <p>Create evaluation categories like Students, Farmers, Teachers or Businesses.</p>
+        </Link>
+
+        <Link to="/admin/questions" className="admin-card glass-panel animate-fade-in">
+          <div className="admin-card-icon">❓</div>
+          <h3>Question Library</h3>
+          <p>Create assessment questions with multiple order-based choice options.</p>
+        </Link>
+
+        <Link to="/admin/mappings" className="admin-card glass-panel animate-fade-in">
+          <div className="admin-card-icon">🔗</div>
+          <h3>Category Mappings</h3>
+          <p>Map questions to categories and configure display orders.</p>
+        </Link>
+      </div>
+    </div>
+  );
+}
+</file>
+
+<file path="frontend/src/pages/admin/AdminMappings.css">
+.admin-mappings-wrapper {
+  padding: 1.5rem 0;
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.admin-mappings-wrapper h2 {
+  font-size: 1.8rem;
+  margin-bottom: 2rem;
+}
+
+.mapping-error {
+  background: rgba(255, 23, 68, 0.15);
+  border: 1px solid rgba(255, 23, 68, 0.3);
+  color: #ff1744;
+  padding: 0.8rem;
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+.mapping-success {
+  background: rgba(0, 230, 118, 0.15);
+  border: 1px solid rgba(0, 230, 118, 0.3);
+  color: var(--success);
+  padding: 0.8rem;
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+  font-size: 0.9rem;
+  text-align: center;
+  font-weight: 600;
+}
+
+.mapping-grid {
+  display: grid;
+  grid-template-columns: 1.5fr 1fr 1fr;
+  gap: 1.2rem;
+  margin-bottom: 1.5rem;
+}
+
+.submit-btn {
+  width: 100%;
+}
+
+.no-mappings {
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  font-style: italic;
+  padding: 1.5rem 0;
+  text-align: center;
+}
+
+.mappings-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.mapping-item {
+  display: flex;
+  align-items: center;
+  gap: 1.2rem;
+  padding: 1rem 1.5rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+}
+
+.mapping-order {
+  width: 32px;
+  height: 32px;
+  background: rgba(138, 43, 226, 0.15);
+  border: 1px solid rgba(138, 43, 226, 0.3);
+  color: var(--primary-hover);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.9rem;
+  flex-shrink: 0;
+}
+
+.mapping-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.mapping-code {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.mapping-text {
+  font-size: 0.95rem;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+@media (max-width: 600px) {
+  .mapping-grid {
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+  }
+}
+</file>
+
+<file path="frontend/src/pages/admin/AdminMappings.jsx">
+import { useState, useEffect } from 'react';
+import { getCategories, mapQuestionToCategory } from '../../services/categories';
+import { getQuestionsByCategory } from '../../services/questions';
+import Loader from '../../components/Loader';
+import './AdminMappings.css';
+
+export default function AdminMappings() {
+  const [categories, setCategories] = useState([]);
+  const [selectedCategoryId, setSelectedCategoryId] = useState('');
+  const [questionId, setQuestionId] = useState('');
+  const [displayOrder, setDisplayOrder] = useState('');
+  
+  const [mappedQuestions, setMappedQuestions] = useState([]);
+  
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+
+  useEffect(() => {
+    async function loadData() {
+      try {
+        const catRes = await getCategories();
+        setCategories(catRes.data);
+        if (catRes.data.length > 0) {
+          setSelectedCategoryId(catRes.data[0].id.toString());
+        }
+      } catch (err) {
+        setError('Failed to load categories');
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadData();
+  }, []);
+
+  // Reload mappings when category selection changes
+  useEffect(() => {
+    if (!selectedCategoryId) return;
+
+    async function loadMappings() {
+      try {
+        const res = await getQuestionsByCategory(parseInt(selectedCategoryId));
+        setMappedQuestions(res.data);
+      } catch (err) {
+        console.error('Failed to load category mappings');
+      }
+    }
+    loadMappings();
+  }, [selectedCategoryId]);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setSubmitting(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      await mapQuestionToCategory({
+        category_id: parseInt(selectedCategoryId),
+        question_id: parseInt(questionId),
+        display_order: parseInt(displayOrder),
+      });
+
+      setSuccess('Question mapped successfully!');
+      setQuestionId('');
+      setDisplayOrder('');
+      
+      // Reload mapped list
+      const res = await getQuestionsByCategory(parseInt(selectedCategoryId));
+      setMappedQuestions(res.data);
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Failed to map question. Verify Question ID exists.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (loading) return <Loader />;
+
+  return (
+    <div className="admin-mappings-wrapper animate-fade-in">
+      <h2>Category-Question Mappings</h2>
+
+      {error && <div className="mapping-error">{error}</div>}
+      {success && <div className="mapping-success">{success}</div>}
+
+      <div className="admin-form glass-panel">
+        <h3 className="form-title">Assign Question to Category</h3>
+        <form onSubmit={handleSubmit}>
+          <div className="mapping-grid">
+            <div className="input-group">
+              <label className="input-label">Select Category</label>
+              <select
+                className="input-field select-field"
+                value={selectedCategoryId}
+                onChange={(e) => setSelectedCategoryId(e.target.value)}
+                required
+              >
+                {categories.map((cat) => (
+                  <option key={cat.id} value={cat.id}>
+                    {cat.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="input-group">
+              <label className="input-label">Question ID (Numeric Reference)</label>
+              <input
+                type="number"
+                className="input-field"
+                value={questionId}
+                onChange={(e) => setQuestionId(e.target.value)}
+                required
+                placeholder="e.g. 5"
+              />
+            </div>
+
+            <div className="input-group">
+              <label className="input-label">Display Order</label>
+              <input
+                type="number"
+                className="input-field"
+                value={displayOrder}
+                onChange={(e) => setDisplayOrder(e.target.value)}
+                required
+                placeholder="e.g. 1"
+              />
+            </div>
+          </div>
+
+          <button type="submit" className={`btn submit-btn ${submitting ? 'btn-disabled' : ''}`} disabled={submitting}>
+            {submitting ? 'Mapping...' : 'Assign Question'}
+          </button>
+        </form>
+      </div>
+
+      <div className="admin-list glass-panel">
+        <h3>Mapped Questions Preview</h3>
+        {mappedQuestions.length === 0 ? (
+          <p className="no-mappings">No questions mapped to this category yet.</p>
+        ) : (
+          <div className="mappings-timeline">
+            {mappedQuestions.map((q, idx) => (
+              <div key={q.id} className="mapping-item">
+                <span className="mapping-order">#{idx + 1}</span>
+                <div className="mapping-info">
+                  <span className="mapping-code">Question ID: {q.id} | Code: {q.code}</span>
+                  <p className="mapping-text">{q.question_text}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+</file>
+
+<file path="frontend/src/pages/admin/AdminQuestions.css">
+.admin-questions-wrapper {
+  padding: 1.5rem 0;
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.admin-questions-wrapper h2 {
+  font-size: 1.8rem;
+  margin-bottom: 2rem;
+}
+
+.q-error {
+  background: rgba(255, 23, 68, 0.15);
+  border: 1px solid rgba(255, 23, 68, 0.3);
+  color: #ff1744;
+  padding: 0.8rem;
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+.q-success {
+  background: rgba(0, 230, 118, 0.15);
+  border: 1px solid rgba(0, 230, 118, 0.3);
+  color: var(--success);
+  padding: 0.8rem;
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+  font-size: 0.9rem;
+  text-align: center;
+  font-weight: 600;
+}
+
+.q-details-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+}
+
+.textarea-field {
+  resize: vertical;
+  min-height: 80px;
+}
+
+.answers-section {
+  margin-top: 2rem;
+  margin-bottom: 2.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 1.5rem;
+}
+
+.answers-section h4 {
+  font-size: 1rem;
+  color: var(--text-secondary);
+  margin-bottom: 1.2rem;
+}
+
+.answer-row {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  margin-bottom: 0.8rem;
+}
+
+.row-index {
+  color: var(--text-muted);
+  font-weight: 700;
+  width: 25px;
+}
+
+.order-input {
+  width: 80px;
+}
+
+.btn-remove {
+  background: rgba(255, 23, 68, 0.15);
+  border: 1px solid rgba(255, 23, 68, 0.3);
+  color: #ff1744;
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  transition: var(--transition-smooth);
+}
+
+.btn-remove:hover {
+  background: rgba(255, 23, 68, 0.3);
+}
+
+.btn-small {
+  padding: 0.5rem 1.2rem;
+  font-size: 0.85rem;
+}
+
+.submit-btn {
+  width: 100%;
+}
+
+@media (max-width: 600px) {
+  .q-details-grid {
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+  }
+}
+</file>
+
+<file path="frontend/src/pages/admin/AdminQuestions.jsx">
+import { useState } from 'react';
+import { createQuestion } from '../../services/questions';
+import './AdminQuestions.css';
+
+export default function AdminQuestions() {
+  const [code, setCode] = useState('');
+  const [text, setText] = useState('');
+  const [type, setType] = useState('SINGLE_CHOICE');
+  const [answers, setAnswers] = useState([
+    { answer_text: '', display_order: 1 },
+    { answer_text: '', display_order: 2 },
+  ]);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+
+  const handleAnswerChange = (index, value) => {
+    const updated = [...answers];
+    updated[index].answer_text = value;
+    setAnswers(updated);
+  };
+
+  const handleOrderChange = (index, value) => {
+    const updated = [...answers];
+    updated[index].display_order = parseInt(value) || 0;
+    setAnswers(updated);
+  };
+
+  const addAnswerField = () => {
+    setAnswers([...answers, { answer_text: '', display_order: answers.length + 1 }]);
+  };
+
+  const removeAnswerField = (index) => {
+    if (answers.length <= 1) return;
+    setAnswers(answers.filter((_, idx) => idx !== index));
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setSubmitting(true);
+    setError('');
+    setSuccess('');
+
+    // Filter empty options
+    const filteredAnswers = answers.filter((a) => a.answer_text.trim() !== '');
+    if (filteredAnswers.length === 0) {
+      setError('Please add at least one answer option.');
+      setSubmitting(false);
+      return;
+    }
+
+    try {
+      const res = await createQuestion({
+        code,
+        question_text: text,
+        question_type: type,
+        status: 'ACTIVE',
+        answers: filteredAnswers,
+      });
+
+      setSuccess(`Question Created Successfully! Question ID is: ${res.data.id}`);
+      setCode('');
+      setText('');
+      setAnswers([
+        { answer_text: '', display_order: 1 },
+        { answer_text: '', display_order: 2 },
+      ]);
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Failed to create question.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="admin-questions-wrapper animate-fade-in">
+      <h2>Question Library</h2>
+
+      {error && <div className="q-error">{error}</div>}
+      {success && <div className="q-success">{success}</div>}
+
+      <div className="admin-form glass-panel">
+        <h3 className="form-title">Create New Question</h3>
+        <form onSubmit={handleSubmit}>
+          <div className="q-details-grid">
+            <div className="input-group">
+              <label className="input-label">Question Code (Unique)</label>
+              <input
+                type="text"
+                className="input-field"
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                required
+                placeholder="e.g. Q001"
+              />
+            </div>
+
+            <div className="input-group">
+              <label className="input-label">Question Type</label>
+              <select
+                className="input-field select-field"
+                value={type}
+                onChange={(e) => setType(e.target.value)}
+              >
+                <option value="SINGLE_CHOICE">Single Choice (Radio)</option>
+                <option value="MULTI_CHOICE">Multiple Choice (Checkbox)</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="input-group">
+            <label className="input-label">Question Text</label>
+            <textarea
+              className="input-field textarea-field"
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              required
+              rows="3"
+              placeholder="Enter question text here..."
+            />
+          </div>
+
+          <div className="answers-section">
+            <h4>Predefined Answer Options</h4>
+            {answers.map((ans, idx) => (
+              <div key={idx} className="answer-row">
+                <span className="row-index">#{idx + 1}</span>
+                <input
+                  type="text"
+                  className="input-field"
+                  value={ans.answer_text}
+                  onChange={(e) => handleAnswerChange(idx, e.target.value)}
+                  placeholder={`Option ${idx + 1} text`}
+                  required
+                />
+                <input
+                  type="number"
+                  className="input-field order-input"
+                  value={ans.display_order}
+                  onChange={(e) => handleOrderChange(idx, e.target.value)}
+                  placeholder="Order"
+                  required
+                />
+                <button
+                  type="button"
+                  className="btn-remove"
+                  onClick={() => removeAnswerField(idx)}
+                  disabled={answers.length <= 1}
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+
+            <button type="button" className="btn btn-secondary btn-small" onClick={addAnswerField}>
+              + Add Option
+            </button>
+          </div>
+
+          <button type="submit" className={`btn submit-btn ${submitting ? 'btn-disabled' : ''}`} disabled={submitting}>
+            {submitting ? 'Creating Question...' : 'Create Question'}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+</file>
+
+<file path="frontend/src/pages/Assessment.css">
+.assessment-wrapper {
+  max-width: 720px;
+  margin: 3rem auto;
+}
+
+.progress-container {
+  margin-bottom: 2rem;
+}
+
+.progress-bar-container {
+  width: 100%;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 0.5rem;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--primary), var(--secondary));
+  border-radius: 4px;
+  transition: width 0.4s ease;
+}
+
+.progress-labels {
+  display: flex;
+  justify-content: space-between;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.question-card {
+  padding: 3rem 2.5rem;
+}
+
+.question-badge {
+  display: inline-block;
+  background: rgba(138, 43, 226, 0.15);
+  border: 1px solid rgba(138, 43, 226, 0.3);
+  color: var(--primary-hover);
+  padding: 0.3rem 1rem;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  margin-bottom: 1.5rem;
+}
+
+.question-text {
+  font-size: 1.5rem;
+  line-height: 1.5;
+  color: #fff;
+  margin-bottom: 2.5rem;
+}
+
+.options-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-bottom: 2.5rem;
+}
+
+.option-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  padding: 1.2rem 1.5rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  transition: var(--transition-smooth);
+}
+
+.option-card:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(138, 43, 226, 0.3);
+}
+
+.option-card.selected {
+  background: rgba(138, 43, 226, 0.1);
+  border-color: var(--primary);
+  box-shadow: 0 0 15px var(--primary-glow);
+}
+
+.option-indicator {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  flex-shrink: 0;
+  position: relative;
+  transition: var(--transition-smooth);
+}
+
+.option-card.selected .option-indicator {
+  border-color: var(--primary);
+  background: var(--primary);
+}
+
+.option-card.selected .option-indicator::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 8px;
+  height: 8px;
+  background: #fff;
+  border-radius: 50%;
+}
+
+.option-text {
+  font-size: 1.05rem;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.question-card .btn {
+  width: 100%;
+}
+
+.assessment-error-wrapper {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 70vh;
+}
+.assessment-error-wrapper .glass-panel {
+  max-width: 500px;
+}
+.text-center { text-align: center; }
+.text-danger { color: var(--error); margin-bottom: 1rem; }
+.mt-4 { margin-top: 1.5rem; }
+</file>
+
+<file path="frontend/src/pages/Assessment.jsx">
+import { useState, useEffect } from 'react';
+import { useSearchParams, useNavigate } from 'react-router-dom';
+import { startAssessment, getCurrentQuestion, submitAnswer } from '../services/assessment';
+import Loader from '../components/Loader';
+import './Assessment.css';
+
+export default function Assessment() {
+  const [searchParams] = useSearchParams();
+  const categoryId = searchParams.get('category');
+  const navigate = useNavigate();
+
+  const [session, setSession] = useState(null);
+  const [question, setQuestion] = useState(null);
+  const [selectedAnswerId, setSelectedAnswerId] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!categoryId) {
+      navigate('/');
+      return;
+    }
+
+    async function initSession() {
+      try {
+        const startRes = await startAssessment(parseInt(categoryId));
+        const activeSession = startRes.data;
+        setSession(activeSession);
+
+        const qRes = await getCurrentQuestion(activeSession.id);
+        setQuestion(qRes.data);
+      } catch (err) {
+        setError(err.response?.data?.detail || 'Failed to initialize session. Make sure questions are mapped.');
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    initSession();
+  }, [categoryId, navigate]);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!selectedAnswerId || submitting) return;
+
+    setSubmitting(true);
+    setError('');
+
+    try {
+      const res = await submitAnswer({
+        session_id: session.id,
+        question_id: question.id,
+        answer_id: selectedAnswerId,
+      });
+
+      if (res.data.is_completed) {
+        navigate(`/completion?session_id=${session.id}`);
+      } else {
+        // Load next question from return directly
+        setQuestion(res.data.next_question);
+        setSelectedAnswerId(null);
+        setSession((prev) => ({
+          ...prev,
+          current_question_index: prev.current_question_index + 1,
+          progress_percentage: res.data.progress_percentage,
+        }));
+      }
+    } catch (err) {
+      setError('Failed to submit answer. Try again.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (loading) return <Loader />;
+
+  if (error) {
+    return (
+      <div className="assessment-error-wrapper animate-fade-in">
+        <div className="glass-panel text-center">
+          <h3 className="text-danger">Evaluation Error</h3>
+          <p>{error}</p>
+          <button className="btn mt-4" onClick={() => navigate('/')}>
+            Back to Dashboard
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const currentProgress = session?.progress_percentage || 0;
+
+  return (
+    <div className="assessment-wrapper animate-fade-in">
+      <div className="progress-container">
+        <div className="progress-bar-container">
+          <div className="progress-bar-fill" style={{ width: `${currentProgress}%` }}></div>
+        </div>
+        <div className="progress-labels">
+          <span>Question {session?.current_question_index + 1}</span>
+          <span>{currentProgress}% Progress</span>
+        </div>
+      </div>
+
+      {question && (
+        <div className="glass-panel question-card">
+          <div className="question-badge">QUESTION {question.code}</div>
+          <h2 className="question-text">{question.question_text}</h2>
+
+          <form onSubmit={handleSubmit}>
+            <div className="options-list">
+              {question.answers.map((opt) => (
+                <div
+                  key={opt.id}
+                  className={`option-card ${selectedAnswerId === opt.id ? 'selected' : ''}`}
+                  onClick={() => setSelectedAnswerId(opt.id)}
+                >
+                  <div className="option-indicator"></div>
+                  <span className="option-text">{opt.answer_text}</span>
+                </div>
+              ))}
+            </div>
+
+            <button
+              type="submit"
+              className={`btn ${!selectedAnswerId || submitting ? 'btn-disabled' : ''}`}
+              disabled={!selectedAnswerId || submitting}
+            >
+              {submitting ? 'Submitting...' : 'Submit & Next'}
+            </button>
+          </form>
+        </div>
+      )}
+    </div>
+  );
+}
+</file>
+
+<file path="frontend/src/pages/Completion.css">
+.completion-wrapper {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 75vh;
+}
+
+.completion-card {
+  width: 100%;
+  max-width: 480px;
+  text-align: center;
+  padding: 4rem 3rem;
+}
+
+.completion-icon {
+  width: 80px;
+  height: 80px;
+  background: linear-gradient(135deg, var(--success) 0%, #00bfa5 100%);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 2.5rem;
+  font-weight: bold;
+  margin: 0 auto 2rem;
+  box-shadow: 0 0 30px rgba(0, 230, 118, 0.45);
+}
+
+.completion-card h1 {
+  font-size: 1.8rem;
+  margin-bottom: 0.8rem;
+}
+
+.completion-subtitle {
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  margin-bottom: 2.5rem;
+  line-height: 1.6;
+}
+
+.completion-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.completion-actions .btn {
+  width: 100%;
+}
+</file>
+
+<file path="frontend/src/pages/Completion.jsx">
+import { useNavigate } from 'react-router-dom';
+import './Completion.css';
+
+export default function Completion() {
+  const navigate = useNavigate();
+
+  return (
+    <div className="completion-wrapper">
+      <div className="completion-card glass-panel animate-fade-in">
+        <div className="completion-icon">✓</div>
+        <h1 className="gradient-text">Assessment Completed!</h1>
+        <p className="completion-subtitle">
+          Great job! Your responses have been processed and recorded successfully.
+        </p>
+
+        <div className="completion-actions">
+          <button className="btn" onClick={() => navigate('/history')}>
+            View History
+          </button>
+          <button className="btn btn-secondary" onClick={() => navigate('/')}>
+            Back to Dashboard
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+</file>
+
+<file path="frontend/src/pages/Dashboard.css">
+.dashboard-wrapper {
+  padding: 2rem 0;
+}
+
+.dashboard-header {
+  text-align: center;
+  margin-bottom: 3rem;
+}
+
+.dashboard-subtitle {
+  color: var(--text-secondary);
+  margin-top: 0.5rem;
+  font-size: 1.1rem;
+}
+
+.dashboard-error {
+  background: rgba(255, 23, 68, 0.15);
+  border: 1px solid rgba(255, 23, 68, 0.3);
+  color: #ff1744;
+  padding: 1rem;
+  border-radius: 10px;
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.category-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 1.8rem;
+}
+
+.category-card {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.category-card h3 {
+  font-size: 1.4rem;
+  margin-bottom: 0.8rem;
+  color: #fff;
+}
+
+.category-card p {
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  line-height: 1.6;
+  margin-bottom: 2rem;
+  flex-grow: 1;
+}
+
+.category-card .btn {
+  width: 100%;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 3rem;
+  color: var(--text-muted);
+}
+</file>
+
+<file path="frontend/src/pages/Dashboard.jsx">
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { getCategories } from '../services/categories';
+import { useAuth } from '../context/AuthContext';
+import Loader from '../components/Loader';
+import './Dashboard.css';
+
+export default function Dashboard() {
+  const [categories, setCategories] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const { user } = useAuth();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    // Redirect to profile if profile is missing
+    if (user && !user.profile) {
+      navigate('/profile');
+      return;
+    }
+
+    async function loadCategories() {
+      try {
+        const res = await getCategories();
+        setCategories(res.data);
+      } catch (err) {
+        setError('Failed to load categories.');
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadCategories();
+  }, [user, navigate]);
+
+  if (loading) return <Loader />;
+
+  return (
+    <div className="dashboard-wrapper">
+      <div className="dashboard-header">
+        <h1 className="gradient-text">Select Assessment</h1>
+        <p className="dashboard-subtitle">Choose a category below to start your evaluation session</p>
+      </div>
+
+      {error && <div className="dashboard-error">{error}</div>}
+
+      {categories.length === 0 ? (
+        <div className="empty-state glass-panel">
+          <p>No active categories available at the moment. Please contact the administrator.</p>
+        </div>
+      ) : (
+        <div className="category-grid">
+          {categories.map((cat) => (
+            <div key={cat.id} className="category-card glass-panel">
+              <h3>{cat.name}</h3>
+              <p>{cat.description || 'No description provided.'}</p>
+              <button
+                className="btn"
+                onClick={() => navigate(`/assessment?category=${cat.id}`)}
+              >
+                Start Assessment
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+</file>
+
+<file path="frontend/src/pages/History.css">
+.history-wrapper {
+  padding: 2rem 0;
+}
+
+.history-header {
+  text-align: center;
+  margin-bottom: 3rem;
+}
+
+.history-subtitle {
+  color: var(--text-secondary);
+  margin-top: 0.5rem;
+  font-size: 1.1rem;
+}
+
+.history-list {
+  max-width: 800px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.history-card {
+  padding: 1.8rem 2rem;
+  cursor: pointer;
+}
+
+.history-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 1.2rem;
+}
+
+.history-card-header h3 {
+  font-size: 1.25rem;
+  color: #fff;
+  margin-bottom: 0.2rem;
+}
+
+.history-date {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.status-badge {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 0.3rem 0.8rem;
+  border-radius: 20px;
+  text-transform: uppercase;
+}
+
+.status-completed {
+  background: rgba(0, 230, 118, 0.12);
+  border: 1px solid rgba(0, 230, 118, 0.25);
+  color: var(--success);
+}
+
+.status-started {
+  background: rgba(255, 234, 0, 0.1);
+  border: 1px solid rgba(255, 234, 0, 0.25);
+  color: var(--warning);
+}
+
+.status-abandoned {
+  background: rgba(255, 23, 68, 0.1);
+  border: 1px solid rgba(255, 23, 68, 0.25);
+  color: var(--error);
+}
+
+.history-progress {
+  width: 100%;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-bottom: 0.8rem;
+}
+
+.history-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--primary), var(--secondary));
+  border-radius: 2px;
+}
+
+.history-card-footer {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.expand-indicator {
+  color: var(--secondary);
+}
+
+.history-responses {
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.history-responses h4 {
+  font-size: 0.95rem;
+  color: var(--text-secondary);
+  margin-bottom: 1rem;
+}
+
+.no-responses {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.responses-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.response-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding-bottom: 0.8rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+.response-item:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.response-question {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.response-answer {
+  font-size: 0.95rem;
+  color: #fff;
+  font-weight: 500;
+  padding-left: 1.2rem;
+  position: relative;
+}
+
+.response-answer::before {
+  content: '→';
+  position: absolute;
+  left: 0;
+  color: var(--secondary);
+}
+</file>
+
+<file path="frontend/src/pages/History.jsx">
+import { useState, useEffect } from 'react';
+import { getAssessmentHistory } from '../services/assessment';
+import Loader from '../components/Loader';
+import './History.css';
+
+export default function History() {
+  const [history, setHistory] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [expandedSessionId, setExpandedSessionId] = useState(null);
+
+  useEffect(() => {
+    async function loadHistory() {
+      try {
+        const res = await getAssessmentHistory();
+        setHistory(res.data);
+      } catch (err) {
+        console.error('Failed to load history', err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadHistory();
+  }, []);
+
+  const toggleExpand = (id) => {
+    setExpandedSessionId(expandedSessionId === id ? null : id);
+  };
+
+  if (loading) return <Loader />;
+
+  return (
+    <div className="history-wrapper">
+      <div className="history-header">
+        <h1 className="gradient-text">Assessment History</h1>
+        <p className="history-subtitle">Review your past evaluation sessions and responses</p>
+      </div>
+
+      {history.length === 0 ? (
+        <div className="empty-state glass-panel">
+          <p>You have not started any assessments yet.</p>
+        </div>
+      ) : (
+        <div className="history-list">
+          {history.map((item) => {
+            const { session, category_name, responses } = item;
+            const formattedDate = new Date(session.start_time).toLocaleDateString(undefined, {
+              year: 'numeric',
+              month: 'long',
+              day: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit',
+            });
+            const isExpanded = expandedSessionId === session.id;
+
+            return (
+              <div key={session.id} className="history-card glass-panel" onClick={() => toggleExpand(session.id)}>
+                <div className="history-card-header">
+                  <div>
+                    <h3>{category_name}</h3>
+                    <span className="history-date">{formattedDate}</span>
+                  </div>
+                  <span className={`status-badge status-${session.status.toLowerCase()}`}>
+                    {session.status}
+                  </span>
+                </div>
+
+                <div className="history-progress">
+                  <div className="history-progress-fill" style={{ width: `${session.progress_percentage}%` }}></div>
+                </div>
+
+                <div className="history-card-footer">
+                  <span>Progress: {session.progress_percentage}%</span>
+                  <span className="expand-indicator">{isExpanded ? '▲ Hide Details' : '▼ View Responses'}</span>
+                </div>
+
+                {isExpanded && (
+                  <div className="history-responses animate-fade-in" onClick={(e) => e.stopPropagation()}>
+                    <h4>Detailed Responses:</h4>
+                    {responses.length === 0 ? (
+                      <p className="no-responses">No answers recorded for this session.</p>
+                    ) : (
+                      <div className="responses-list">
+                        {responses.map((resp) => (
+                          <div key={resp.id} className="response-item">
+                            <span className="response-question">Q: {resp.question_text}</span>
+                            <span className="response-answer">A: {resp.answer_text}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+</file>
+
+<file path="frontend/src/pages/Login.css">
+.login-card {
+  width: 100%;
+  max-width: 420px;
+  text-align: center;
+}
+
+.login-subtitle {
+  color: var(--text-secondary);
+  margin-bottom: 2rem;
+  font-size: 0.95rem;
+}
+
+.login-error {
+  background: rgba(255, 23, 68, 0.1);
+  border: 1px solid rgba(255, 23, 68, 0.3);
+  color: #ff1744;
+  padding: 0.8rem;
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+  font-size: 0.9rem;
+}
+
+.login-card .btn {
+  width: 100%;
+  margin-top: 0.5rem;
+}
+
+.login-footer {
+  margin-top: 1.5rem;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.login-footer a {
+  color: var(--secondary);
+  text-decoration: none;
+  font-weight: 600;
+  transition: var(--transition-smooth);
+}
+
+.login-footer a:hover {
+  color: #fff;
+  text-shadow: 0 0 8px var(--secondary-glow);
+}
+</file>
+
+<file path="frontend/src/pages/Login.jsx">
+import { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
+import { loginUser, getMe } from '../services/auth';
+import './Login.css';
+
+export default function Login() {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const { login } = useAuth();
+  const navigate = useNavigate();
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+
+    try {
+      const res = await loginUser(username, password);
+      const token = res.data.access_token;
+      
+      // Load user profile details
+      localStorage.setItem('access_token', token);
+      const meRes = await getMe();
+      login(token, meRes.data);
+      
+      navigate('/');
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Invalid username or password');
+      localStorage.removeItem('access_token');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="login-card glass-panel animate-fade-in">
+      <h2 className="gradient-text">Welcome Back</h2>
+      <p className="login-subtitle">Sign in to your assessment account</p>
+
+      {error && <div className="login-error">{error}</div>}
+
+      <form onSubmit={handleSubmit}>
+        <div className="input-group">
+          <label className="input-label">Username or Email</label>
+          <input
+            type="text"
+            className="input-field"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            required
+            placeholder="Enter username or email"
+          />
+        </div>
+
+        <div className="input-group">
+          <label className="input-label">Password</label>
+          <input
+            type="password"
+            className="input-field"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            placeholder="••••••••"
+          />
+        </div>
+
+        <button type="submit" className={`btn ${loading ? 'btn-disabled' : ''}`} disabled={loading}>
+          {loading ? 'Signing in...' : 'Sign In'}
+        </button>
+      </form>
+
+      <div className="login-footer">
+        Don't have an account? <Link to="/register">Register here</Link>
+      </div>
+    </div>
+  );
+}
+</file>
+
+<file path="frontend/src/pages/Profile.css">
+.profile-wrapper {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 80vh;
+}
+
+.profile-card {
+  width: 100%;
+  max-width: 540px;
+  text-align: center;
+}
+
+.profile-subtitle {
+  color: var(--text-secondary);
+  margin-bottom: 2rem;
+  font-size: 0.95rem;
+}
+
+.profile-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.2rem;
+}
+
+.profile-grid-three {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.profile-error {
+  background: rgba(255, 23, 68, 0.1);
+  border: 1px solid rgba(255, 23, 68, 0.3);
+  color: #ff1744;
+  padding: 0.8rem;
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+  font-size: 0.9rem;
+}
+
+.profile-card .btn {
+  width: 100%;
+  margin-top: 1rem;
+}
+
+.profile-success {
+  padding: 1rem 0;
+}
+
+.success-icon {
+  width: 60px;
+  height: 60px;
+  background: linear-gradient(135deg, var(--success) 0%, #00bfa5 100%);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 1.8rem;
+  font-weight: bold;
+  margin: 0 auto 1.2rem;
+  box-shadow: 0 0 20px rgba(0, 230, 118, 0.4);
+}
+
+.profile-success h3 {
+  font-size: 1.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.profile-success p {
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  margin-bottom: 1.5rem;
+}
+
+.reg-number {
+  font-family: var(--font-heading);
+  font-size: 2rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  background: linear-gradient(90deg, var(--secondary), var(--primary-hover));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin: 1.5rem 0;
+  padding: 0.8rem;
+  border: 1px dashed rgba(255, 255, 255, 0.15);
+  border-radius: 10px;
+  background-color: rgba(255, 255, 255, 0.02);
+}
+@media (max-width: 480px) {
+  .profile-grid, .profile-grid-three {
+    grid-template-columns: 1fr;
+  }
+}
+</file>
+
+<file path="frontend/src/pages/Profile.jsx">
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { createProfile } from '../services/auth';
+import { useAuth } from '../context/AuthContext';
+import './Profile.css';
+
+export default function Profile() {
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [districtCode, setDistrictCode] = useState('');
+  const [areaCode, setAreaCode] = useState('');
+  const [categoryCode, setCategoryCode] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [regNumber, setRegNumber] = useState('');
+  const { loadUser } = useAuth();
+  const navigate = useNavigate();
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+
+    try {
+      const res = await createProfile({
+        first_name: firstName,
+        last_name: lastName,
+        phone,
+        district_code: districtCode,
+        area_code: areaCode,
+        category_code: categoryCode,
+      });
+      setRegNumber(res.data.registration_number);
+      await loadUser(); // Reload user state to fetch profile links
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Failed to complete profile. Verify your codes.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="profile-wrapper">
+      <div className="profile-card glass-panel animate-fade-in">
+        <h2 className="gradient-text">Complete Your Profile</h2>
+        <p className="profile-subtitle">
+          Fill in details below to generate your unique, future-ready Registration Number.
+        </p>
+
+        {error && <div className="profile-error">{error}</div>}
+
+        {!regNumber ? (
+          <form onSubmit={handleSubmit}>
+            <div className="profile-grid">
+              <div className="input-group">
+                <label className="input-label">First Name</label>
+                <input
+                  type="text"
+                  className="input-field"
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                  required
+                  placeholder="John"
+                />
+              </div>
+
+              <div className="input-group">
+                <label className="input-label">Last Name</label>
+                <input
+                  type="text"
+                  className="input-field"
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
+                  required
+                  placeholder="Doe"
+                />
+              </div>
+            </div>
+
+            <div className="input-group">
+              <label className="input-label">Phone Number</label>
+              <input
+                type="tel"
+                className="input-field"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                required
+                placeholder="+1 (555) 000-0000"
+              />
+            </div>
+
+            <div className="profile-grid-three">
+              <div className="input-group">
+                <label className="input-label">District Code</label>
+                <input
+                  type="text"
+                  className="input-field"
+                  value={districtCode}
+                  onChange={(e) => setDistrictCode(e.target.value)}
+                  required
+                  maxLength="4"
+                  placeholder="e.g. 04"
+                />
+              </div>
+
+              <div className="input-group">
+                <label className="input-label">Area Code</label>
+                <input
+                  type="text"
+                  className="input-field"
+                  value={areaCode}
+                  onChange={(e) => setAreaCode(e.target.value)}
+                  required
+                  maxLength="4"
+                  placeholder="e.g. 123"
+                />
+              </div>
+
+              <div className="input-group">
+                <label className="input-label">Category Code</label>
+                <input
+                  type="text"
+                  className="input-field"
+                  value={categoryCode}
+                  onChange={(e) => setCategoryCode(e.target.value)}
+                  required
+                  maxLength="4"
+                  placeholder="e.g. 02"
+                />
+              </div>
+            </div>
+
+            <button type="submit" className={`btn ${loading ? 'btn-disabled' : ''}`} disabled={loading}>
+              {loading ? 'Generating...' : 'Complete & Generate'}
+            </button>
+          </form>
+        ) : (
+          <div className="profile-success animate-fade-in">
+            <div className="success-icon">✓</div>
+            <h3>Profile Completed!</h3>
+            <p>Your unique registration number has been successfully generated:</p>
+            <div className="reg-number">{regNumber}</div>
+            <button className="btn" onClick={() => navigate('/')}>
+              Go to Dashboard
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+</file>
+
+<file path="frontend/src/pages/Register.css">
+.register-card {
+  width: 100%;
+  max-width: 420px;
+  text-align: center;
+}
+
+.register-subtitle {
+  color: var(--text-secondary);
+  margin-bottom: 2rem;
+  font-size: 0.95rem;
+}
+
+.register-error {
+  background: rgba(255, 23, 68, 0.1);
+  border: 1px solid rgba(255, 23, 68, 0.3);
+  color: #ff1744;
+  padding: 0.8rem;
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+  font-size: 0.9rem;
+}
+
+.register-card .btn {
+  width: 100%;
+  margin-top: 0.5rem;
+}
+
+.register-footer {
+  margin-top: 1.5rem;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.register-footer a {
+  color: var(--secondary);
+  text-decoration: none;
+  font-weight: 600;
+  transition: var(--transition-smooth);
+}
+
+.register-footer a:hover {
+  color: #fff;
+  text-shadow: 0 0 8px var(--secondary-glow);
+}
+</file>
+
+<file path="frontend/src/pages/Register.jsx">
+import { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { registerUser, loginUser, getMe } from '../services/auth';
+import { useAuth } from '../context/AuthContext';
+import './Register.css';
+
+export default function Register() {
+  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const { login } = useAuth();
+  const navigate = useNavigate();
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+
+    if (password !== confirmPassword) {
+      setError('Passwords do not match');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      // Register
+      await registerUser({ username, email, password });
+      
+      // Auto Login
+      const loginRes = await loginUser(username, password);
+      const token = loginRes.data.access_token;
+      
+      localStorage.setItem('access_token', token);
+      const meRes = await getMe();
+      login(token, meRes.data);
+      
+      navigate('/profile');
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Registration failed. Try another username/email.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="register-card glass-panel animate-fade-in">
+      <h2 className="gradient-text">Create Account</h2>
+      <p className="register-subtitle">Join the Dynamic Assessment Platform</p>
+
+      {error && <div className="register-error">{error}</div>}
+
+      <form onSubmit={handleSubmit}>
+        <div className="input-group">
+          <label className="input-label">Username</label>
+          <input
+            type="text"
+            className="input-field"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            required
+            placeholder="e.g. johndoe"
+          />
+        </div>
+
+        <div className="input-group">
+          <label className="input-label">Email Address</label>
+          <input
+            type="email"
+            className="input-field"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            placeholder="johndoe@example.com"
+          />
+        </div>
+
+        <div className="input-group">
+          <label className="input-label">Password</label>
+          <input
+            type="password"
+            className="input-field"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            placeholder="••••••••"
+          />
+        </div>
+
+        <div className="input-group">
+          <label className="input-label">Confirm Password</label>
+          <input
+            type="password"
+            className="input-field"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            required
+            placeholder="••••••••"
+          />
+        </div>
+
+        <button type="submit" className={`btn ${loading ? 'btn-disabled' : ''}`} disabled={loading}>
+          {loading ? 'Registering...' : 'Register'}
+        </button>
+      </form>
+
+      <div className="register-footer">
+        Already have an account? <Link to="/login">Login here</Link>
+      </div>
+    </div>
+  );
+}
+</file>
+
+<file path="frontend/src/routes/AppRoutes.jsx">
+import { Routes, Route } from 'react-router-dom';
+import AuthLayout from '../layouts/AuthLayout';
+import DashboardLayout from '../layouts/DashboardLayout';
+import PrivateRoute from './PrivateRoute';
+
+import Login from '../pages/Login';
+import Register from '../pages/Register';
+import Profile from '../pages/Profile';
+import Dashboard from '../pages/Dashboard';
+import Assessment from '../pages/Assessment';
+import Completion from '../pages/Completion';
+import History from '../pages/History';
+
+import AdminDashboard from '../pages/admin/AdminDashboard';
+import AdminCategories from '../pages/admin/AdminCategories';
+import AdminQuestions from '../pages/admin/AdminQuestions';
+import AdminMappings from '../pages/admin/AdminMappings';
+
+export default function AppRoutes() {
+  return (
+    <Routes>
+      {/* Public auth routes */}
+      <Route element={<AuthLayout />}>
+        <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
+      </Route>
+
+      {/* Protected routes */}
+      <Route
+        element={
+          <PrivateRoute>
+            <DashboardLayout />
+          </PrivateRoute>
+        }
+      >
+        <Route path="/" element={<Dashboard />} />
+        <Route path="/profile" element={<Profile />} />
+        <Route path="/assessment" element={<Assessment />} />
+        <Route path="/completion" element={<Completion />} />
+        <Route path="/history" element={<History />} />
+
+        {/* Admin routes */}
+        <Route path="/admin" element={<AdminDashboard />} />
+        <Route path="/admin/categories" element={<AdminCategories />} />
+        <Route path="/admin/questions" element={<AdminQuestions />} />
+        <Route path="/admin/mappings" element={<AdminMappings />} />
+      </Route>
+    </Routes>
+  );
+}
+</file>
+
+<file path="frontend/src/routes/PrivateRoute.jsx">
+import { Navigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
+import Loader from '../components/Loader';
+
+export default function PrivateRoute({ children }) {
+  const { isAuthenticated, loading } = useAuth();
+
+  if (loading) return <Loader />;
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
+
+  return children;
+}
+</file>
+
+<file path="frontend/src/services/api.js">
+import axios from 'axios';
+
+const API_BASE_URL = 'http://127.0.0.1:8000/api/v1';
+
+const api = axios.create({
+  baseURL: API_BASE_URL,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
+// Attach JWT token to every request if available
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('access_token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+// Global response error handler
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response && error.response.status === 401) {
+      localStorage.removeItem('access_token');
+      window.location.href = '/login';
+    }
+    return Promise.reject(error);
+  }
+);
+
+export default api;
+</file>
+
+<file path="frontend/src/services/assessment.js">
+import api from './api';
+
+export const startAssessment = (categoryId) => api.post('/assessment/start', { category_id: categoryId });
+export const getCurrentQuestion = (sessionId) => api.get(`/assessment/question?session_id=${sessionId}`);
+export const submitAnswer = (data) => api.post('/assessment/answer', data);
+export const getAssessmentHistory = () => api.get('/assessment/history');
+</file>
+
+<file path="frontend/src/services/auth.js">
+import api from './api';
+
+export const registerUser = (data) => api.post('/auth/register', data);
+
+export const loginUser = (username, password) => {
+  const formData = new URLSearchParams();
+  formData.append('username', username);
+  formData.append('password', password);
+  return api.post('/auth/login', formData, {
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+  });
+};
+
+export const getMe = () => api.get('/auth/me');
+
+export const createProfile = (data) => api.post('/auth/profile', data);
+</file>
+
+<file path="frontend/src/services/categories.js">
+import api from './api';
+
+export const getCategories = () => api.get('/categories');
+export const createCategory = (data) => api.post('/categories', data);
+export const mapQuestionToCategory = (data) => api.post('/categories/map', data);
+</file>
+
+<file path="frontend/src/services/questions.js">
+import api from './api';
+
+export const createQuestion = (data) => api.post('/questions', data);
+export const getQuestionsByCategory = (categoryId) => api.get(`/questions/category/${categoryId}`);
+</file>
+
+<file path="frontend/src/App.css">
+.counter {
+  font-size: 16px;
+  padding: 5px 10px;
+  border-radius: 5px;
+  color: var(--accent);
+  background: var(--accent-bg);
+  border: 2px solid transparent;
+  transition: border-color 0.3s;
+  margin-bottom: 24px;
+
+  &:hover {
+    border-color: var(--accent-border);
+  }
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+}
+
+.hero {
+  position: relative;
+
+  .base,
+  .framework,
+  .vite {
+    inset-inline: 0;
+    margin: 0 auto;
+  }
+
+  .base {
+    width: 170px;
+    position: relative;
+    z-index: 0;
+  }
+
+  .framework,
+  .vite {
+    position: absolute;
+  }
+
+  .framework {
+    z-index: 1;
+    top: 34px;
+    height: 28px;
+    transform: perspective(2000px) rotateZ(300deg) rotateX(44deg) rotateY(39deg)
+      scale(1.4);
+  }
+
+  .vite {
+    z-index: 0;
+    top: 107px;
+    height: 26px;
+    width: auto;
+    transform: perspective(2000px) rotateZ(300deg) rotateX(40deg) rotateY(39deg)
+      scale(0.8);
+  }
+}
+
+#center {
+  display: flex;
+  flex-direction: column;
+  gap: 25px;
+  place-content: center;
+  place-items: center;
+  flex-grow: 1;
+
+  @media (max-width: 1024px) {
+    padding: 32px 20px 24px;
+    gap: 18px;
+  }
+}
+
+#next-steps {
+  display: flex;
+  border-top: 1px solid var(--border);
+  text-align: left;
+
+  & > div {
+    flex: 1 1 0;
+    padding: 32px;
+    @media (max-width: 1024px) {
+      padding: 24px 20px;
+    }
+  }
+
+  .icon {
+    margin-bottom: 16px;
+    width: 22px;
+    height: 22px;
+  }
+
+  @media (max-width: 1024px) {
+    flex-direction: column;
+    text-align: center;
+  }
+}
+
+#docs {
+  border-right: 1px solid var(--border);
+
+  @media (max-width: 1024px) {
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+}
+
+#next-steps ul {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  gap: 8px;
+  margin: 32px 0 0;
+
+  .logo {
+    height: 18px;
+  }
+
+  a {
+    color: var(--text-h);
+    font-size: 16px;
+    border-radius: 6px;
+    background: var(--social-bg);
+    display: flex;
+    padding: 6px 12px;
+    align-items: center;
+    gap: 8px;
+    text-decoration: none;
+    transition: box-shadow 0.3s;
+
+    &:hover {
+      box-shadow: var(--shadow);
+    }
+    .button-icon {
+      height: 18px;
+      width: 18px;
+    }
+  }
+
+  @media (max-width: 1024px) {
+    margin-top: 20px;
+    flex-wrap: wrap;
+    justify-content: center;
+
+    li {
+      flex: 1 1 calc(50% - 8px);
+    }
+
+    a {
+      width: 100%;
+      justify-content: center;
+      box-sizing: border-box;
+    }
+  }
+}
+
+#spacer {
+  height: 88px;
+  border-top: 1px solid var(--border);
+  @media (max-width: 1024px) {
+    height: 48px;
+  }
+}
+
+.ticks {
+  position: relative;
+  width: 100%;
+
+  &::before,
+  &::after {
+    content: '';
+    position: absolute;
+    top: -4.5px;
+    border: 5px solid transparent;
+  }
+
+  &::before {
+    left: 0;
+    border-left-color: var(--border);
+  }
+  &::after {
+    right: 0;
+    border-right-color: var(--border);
+  }
+}
+</file>
+
+<file path="frontend/src/App.jsx">
+import { BrowserRouter } from 'react-router-dom';
+import { AuthProvider } from './context/AuthContext';
+import AppRoutes from './routes/AppRoutes';
+import './index.css';
+
+function App() {
+  return (
+    <BrowserRouter>
+      <AuthProvider>
+        <AppRoutes />
+      </AuthProvider>
+    </BrowserRouter>
+  );
+}
+
+export default App;
+</file>
+
+<file path="frontend/src/index.css">
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
+
+:root {
+  --font-heading: 'Outfit', sans-serif;
+  --font-body: 'Plus Jakarta Sans', sans-serif;
+
+  /* Color Palette - Dark Premium Theme */
+  --bg-gradient: linear-gradient(135deg, #0f0c20 0%, #15102a 50%, #06020f 100%);
+  --bg-color: #0c081d;
+  --panel-bg: rgba(25, 18, 48, 0.45);
+  --panel-border: rgba(255, 255, 255, 0.08);
+  
+  --primary: #8a2be2;
+  --primary-hover: #9d4edd;
+  --primary-glow: rgba(138, 43, 226, 0.4);
+  
+  --secondary: #00f2fe;
+  --secondary-glow: rgba(0, 242, 254, 0.3);
+  
+  --accent: #ff007f;
+  
+  --text-primary: #f8f9fa;
+  --text-secondary: #a9a9d6;
+  --text-muted: #6b6b99;
+  
+  --success: #00e676;
+  --error: #ff1744;
+  --warning: #ffea00;
+  
+  --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+  --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: var(--font-body);
+  background: var(--bg-gradient);
+  background-attachment: fixed;
+  color: var(--text-primary);
+  min-height: 100vh;
+  overflow-x: hidden;
+  line-height: 1.6;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-heading);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #fff;
+}
+
+/* Glassmorphism Card Style */
+.glass-panel {
+  background: var(--panel-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--panel-border);
+  border-radius: 16px;
+  box-shadow: var(--glass-shadow);
+  padding: 2.5rem;
+  transition: var(--transition-smooth);
+}
+
+.glass-panel:hover {
+  border-color: rgba(255, 255, 255, 0.15);
+  box-shadow: 0 12px 40px 0 rgba(138, 43, 226, 0.15);
+  transform: translateY(-2px);
+}
+
+/* Gradient Text */
+.gradient-text {
+  background: linear-gradient(90deg, #fff 0%, var(--secondary) 50%, var(--primary) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Input Styles */
+.input-group {
+  margin-bottom: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  text-align: left;
+}
+
+.input-label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.input-field {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  padding: 0.8rem 1.2rem;
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 1rem;
+  transition: var(--transition-smooth);
+  width: 100%;
+}
+
+.input-field:focus {
+  outline: none;
+  border-color: var(--primary);
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 0 12px var(--primary-glow);
+}
+
+/* Custom Select */
+.select-field {
+  appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg fill='white' height='24' viewBox='0 0 24 24' width='24' xmlns='http://www.w3.org/2000/svg'><path d='M7 10l5 5 5-5z'/><path d='M0 0h24v24H0z' fill='none'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 1rem center;
+  padding-right: 2.5rem;
+}
+
+.select-field option {
+  background: var(--bg-color);
+  color: var(--text-primary);
+}
+
+/* Buttons */
+.btn {
+  background: linear-gradient(135deg, var(--primary) 0%, #6f1ab6 100%);
+  border: none;
+  border-radius: 10px;
+  color: #fff;
+  cursor: pointer;
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: 1rem;
+  padding: 0.8rem 2rem;
+  text-align: center;
+  text-decoration: none;
+  transition: var(--transition-smooth);
+  box-shadow: 0 4px 15px var(--primary-glow);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(138, 43, 226, 0.6);
+  background: linear-gradient(135deg, var(--primary-hover) 0%, var(--primary) 100%);
+}
+
+.btn-secondary {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--panel-border);
+  box-shadow: none;
+}
+
+.btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.15);
+  box-shadow: 0 4px 15px rgba(255, 255, 255, 0.05);
+}
+
+.btn-disabled {
+  background: var(--text-muted) !important;
+  cursor: not-allowed;
+  box-shadow: none !important;
+  transform: none !important;
+  opacity: 0.5;
+}
+
+/* Layout container */
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+.auth-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 85vh;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.5s ease forwards;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #0f0c20;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--primary);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--primary-hover);
+}
+</file>
+
+<file path="frontend/src/main.jsx">
+import { StrictMode } from 'react'
+import { createRoot } from 'react-dom/client'
+import App from './App.jsx'
+
+createRoot(document.getElementById('root')).render(
+  <StrictMode>
+    <App />
+  </StrictMode>,
+)
+</file>
+
+<file path="frontend/.gitignore">
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+</file>
+
+<file path="frontend/.oxlintrc.json">
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["react", "oxc"],
+  "rules": {
+    "react/rules-of-hooks": "error",
+    "react/only-export-components": ["warn", { "allowConstantExport": true }]
+  }
+}
+</file>
+
+<file path="frontend/index.html">
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>frontend</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
+</file>
+
+<file path="frontend/package.json">
+{
+  "name": "frontend",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "lint": "oxlint",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "axios": "^1.18.1",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "react-router-dom": "^7.18.1"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.3",
+    "oxlint": "^1.71.0",
+    "vite": "^8.1.1"
+  }
+}
+</file>
+
+<file path="frontend/README.md">
+# React + Vite
+
+This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+
+Currently, two official plugins are available:
+
+- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
+- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+
+## React Compiler
+
+The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+
+## Expanding the Oxlint configuration
+
+If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+</file>
+
+<file path="frontend/vite.config.js">
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+
+// https://vite.dev/config/
+export default defineConfig({
+  plugins: [react()],
+})
+</file>
+
+</files>
