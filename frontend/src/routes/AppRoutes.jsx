@@ -1,50 +1,24 @@
-import { Routes, Route } from 'react-router-dom';
-import AuthLayout from '../layouts/AuthLayout';
-import DashboardLayout from '../layouts/DashboardLayout';
-import PrivateRoute from './PrivateRoute';
+import { Routes, Route } from "react-router-dom";
 
-import Login from '../pages/Login';
-import Register from '../pages/Register';
-import Profile from '../pages/Profile';
-import Dashboard from '../pages/Dashboard';
-import Assessment from '../pages/Assessment';
-import Completion from '../pages/Completion';
-import History from '../pages/History';
+import Welcome from "../pages/Welcome";
 
-import AdminDashboard from '../pages/admin/AdminDashboard';
-import AdminCategories from '../pages/admin/AdminCategories';
-import AdminQuestions from '../pages/admin/AdminQuestions';
-import AdminMappings from '../pages/admin/AdminMappings';
-
+import NamePage from "../pages/registration/NamePage";
+import MobilePage from "../pages/registration/MobilePage";
+import DistrictPage from "../pages/registration/DistrictPage";
+import AgePage from "../pages/registration/AgePage";
 export default function AppRoutes() {
   return (
     <Routes>
-      {/* Public auth routes */}
-      <Route element={<AuthLayout />}>
-        <Route path="/login" element={<Login />} />
-        <Route path="/register" element={<Register />} />
-      </Route>
+      <Route path="/" element={<Welcome />} />
 
-      {/* Protected routes */}
-      <Route
-        element={
-          <PrivateRoute>
-            <DashboardLayout />
-          </PrivateRoute>
-        }
-      >
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/profile" element={<Profile />} />
-        <Route path="/assessment" element={<Assessment />} />
-        <Route path="/completion" element={<Completion />} />
-        <Route path="/history" element={<History />} />
+      <Route path="/register/name" element={<NamePage />} />
 
-        {/* Admin routes */}
-        <Route path="/admin" element={<AdminDashboard />} />
-        <Route path="/admin/categories" element={<AdminCategories />} />
-        <Route path="/admin/questions" element={<AdminQuestions />} />
-        <Route path="/admin/mappings" element={<AdminMappings />} />
-      </Route>
+      <Route path="/register/mobile" element={<MobilePage />} />
+<Route
+  path="/register/age"
+  element={<AgePage />}
+/>
+<Route path="/register/district" element={<DistrictPage />} />
     </Routes>
   );
 }
